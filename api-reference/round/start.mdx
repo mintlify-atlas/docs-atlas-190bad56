@@ -1,7 +1,7 @@
 ---
 title: "POST /api/rooms/round/start — Begin a Night Round"
-sidebarTitle: "POST /round/start"
-description: "Narrator-only endpoint that increments the round counter, sets the game phase to 'night', clears previous actions and votes, and appends a round_started event to the log."
+sidebarTitle: "Round Start"
+description: "Narrator-only endpoint that increments the round counter, transitions to the night phase, resets actions and votes, and appends a round_started event."
 ---
 
 The narrator calls this endpoint to open a new night round once all players have confirmed their roles. It increments the internal round counter, transitions the game `phase` from `'idle'` to `'night'`, wipes any leftover actions, votes, and Mafia messages from the previous round, and appends a `round_started` entry to the round event log. The endpoint is idempotent against accidental double-calls: if a night round or a voting phase is already active, it returns an appropriate conflict error rather than overwriting live state.
@@ -31,7 +31,7 @@ The narrator calls this endpoint to open a new night round once all players have
 ## Error responses
 
 | Status | `error` message | Condition |
-|--------|-----------------|-----------|
+|--------|-----------------|-----------| 
 | `400` | `Missing roomCode or clientId` | Either field is absent or empty. |
 | `403` | `Player not found` | No player row matches `clientId` in this room. |
 | `403` | `Only the narrator can start a round.` | The caller is not the narrator. |

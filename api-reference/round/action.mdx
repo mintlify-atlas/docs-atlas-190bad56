@@ -1,7 +1,7 @@
 ---
 title: "POST /api/rooms/round/action — Submit Night Action or Chat"
-sidebarTitle: "POST /round/action"
-description: "Dual-purpose endpoint: alive players submit their role-specific night action by targeting a player, or send a message to the Mafia or Graveyard chat channel."
+sidebarTitle: "Round Action"
+description: "Submit a role-specific night action targeting another player, or post a message to the Mafia channel or the Graveyard chat for eliminated players."
 ---
 
 This endpoint handles two distinct operations within an active game: submitting a **night action** (where an eligible role targets another player) and posting a **chat message** to either the private Mafia channel or the Graveyard channel for eliminated players. The server determines which operation to perform based on the presence of `message` in the request body. If `message` is provided, the request is treated as a chat submission; otherwise, `targetId` is required for a night action. Both paths require the room to be in an active game state and `casualMode` to be disabled.
@@ -81,7 +81,7 @@ This endpoint handles two distinct operations within an active game: submitting 
 ## Error responses
 
 | Status | `error` message | Condition |
-|--------|-----------------|-----------|
+|--------|-----------------|-----------| 
 | `400` | `Missing roomCode or clientId` | Either required identity field is absent or empty. |
 | `400` | `Missing targetId` | Night action path: `targetId` is absent or empty (and no `message` is present). |
 | `403` | `Player not found` | No player row matches `clientId` in this room. |
@@ -98,7 +98,7 @@ This endpoint handles two distinct operations within an active game: submitting 
 | `405` | `Method not allowed` | Request method is not `POST`. |
 | `409` | `Actions are available after the game starts.` | Room `status` is not `'finished'` (game hasn't fully started). |
 | `409` | `Role-only mode does not use in-app actions or chat.` | `casualMode` is enabled for this room. |
-| `409` | `The game is over.` | A `gameResult` is already set (Mafia chat or night action path). |
+| `409` | `The game is over.` | A `gameResult` is already set (Mafia chat or night action path only). |
 | `409` | `Mafia chat is available only at night.` | Mafia chat: current phase is not `'night'`. |
 | `409` | `There is no active night round.` | Night action: current phase is not `'night'`. |
 | `409` | `That player has already been eliminated.` | Night action: the targeted player is in `eliminatedPlayerIds`. |

@@ -1,7 +1,7 @@
 ---
-title: "POST /api/rooms/leave — Remove a Player from a Room"
-sidebarTitle: "POST /rooms/leave"
-description: "Removes the calling player from a room. If the departing player was the host, promotes the next earliest-joined player. Deletes the room if no players remain."
+title: "Remove a Player from a Room — POST /api/rooms/leave"
+sidebarTitle: "Leave Room"
+description: "Removes the calling player from a room. Promotes the next earliest-joined player to host if needed. Deletes the room when no players remain."
 ---
 
 The `/api/rooms/leave` endpoint gracefully removes a player from a room. It handles three important scenarios automatically: if the departing player was the **host**, the longest-tenured remaining player (sorted by `created_at` ascending) is promoted to host so the room is never left without leadership; if the room becomes **empty** after the player leaves, the room itself is deleted from the database; if the player's `clientId` is not found in the room, the call is treated as a no-op and returns success, making it safe to call on page unload regardless of prior state.
@@ -28,16 +28,21 @@ The `/api/rooms/leave` endpoint gracefully removes a player from a room. It hand
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
-| `404` | `Room not found` | No room matches the provided `roomCode`. |
-| `405` | `Method not allowed` | Request was not `POST`. |
-| `500` | `Failed to load player` | Supabase error while looking up the player record. |
-| `500` | `Failed to remove player` | Supabase error while deleting the player row. |
-| `500` | `Failed to load remaining players` | Supabase error while querying remaining players after deletion. |
-| `500` | `Failed to remove room` | Supabase error while deleting the now-empty room. |
-| `500` | `Failed to promote new host` | Supabase error while updating the next host's flag. |
+<ResponseField name="400 — Missing roomCode or clientId" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="404 — Room not found" type="string">
+  No room matches the provided `roomCode`.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="500 — Database error" type="string">
+  One of: `Failed to load player`, `Failed to remove player`, `Failed to load remaining players`, `Failed to remove room`, or `Failed to promote new host` — indicates a Supabase database error.
+</ResponseField>
 
 ## Example
 

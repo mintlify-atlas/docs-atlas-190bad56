@@ -1,7 +1,7 @@
 ---
-title: "POST /api/rooms/join — Create or Join a Room"
-sidebarTitle: "POST /rooms/join"
-description: "Creates a new room with optional settings or joins an existing one by room code. Reconnects a returning player if their clientId is already present."
+title: "Join or Create a Room — POST /api/rooms/join"
+sidebarTitle: "Join Room"
+description: "Creates a new room with optional settings or joins an existing one by room code. Reconnects a returning player when their clientId is already present."
 ---
 
 The `/api/rooms/join` endpoint is the entry point for every player session. When called with a `roomCode` that does not yet exist **and** a `settings` object is provided, it creates the room in `waiting` status and marks the calling player as host. When the room already exists, the player is added as a regular member — unless their `clientId` is already registered, in which case the call acts as a reconnect and updates the player's `name` and `last_seen` timestamp without consuming a slot. The frontend calls this endpoint once on the join/create screen before navigating into the lobby.
@@ -9,7 +9,7 @@ The `/api/rooms/join` endpoint is the entry point for every player session. When
 ## Request
 
 <ParamField body="roomCode" type="string" required>
-  A 6-digit numeric string that identifies the room (e.g. `"123456"`). The value is normalized to uppercase internally, but only digit characters are accepted. Leading zeros are significant.
+  A 6-digit numeric string that identifies the room (e.g. `"123456"`). The value is trimmed and uppercased internally via `normalizeRoomCode`, but only digit characters are accepted after normalization. Leading zeros are significant.
 </ParamField>
 
 <ParamField body="playerName" type="string" required>
@@ -73,17 +73,41 @@ A successful request returns HTTP `200` with the following `data` object.
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `400` | `Missing roomCode, playerName, or clientId` | One or more required body fields are absent or empty. |
-| `400` | `Room code must contain exactly 6 digits` | `roomCode` contained non-digit characters or was not 6 characters after normalization. |
-| `400` | `Player name must be 32 characters or fewer` | `playerName` exceeded the 32-character limit. |
-| `400` | `Invalid client identifier` | `clientId` exceeded 128 characters. |
-| `404` | `Room not found.` | The room code does not exist and no `settings` object was provided. |
-| `405` | `Method not allowed` | Request was not `POST`. |
-| `409` | `The game has already started.` | The room exists but its status is no longer `waiting`, and the caller is a new player (not a reconnect). |
-| `409` | `This room is full. The maximum is 20 players.` | The room already has 20 players. |
-| `500` | `Failed to load room` / `Failed to create room` / `Failed to create player` / `Failed to update player` / `Failed to load player` / `Failed to check room capacity` | Supabase database error. |
+<ResponseField name="400 — Missing roomCode, playerName, or clientId" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="400 — Room code must contain exactly 6 digits" type="string">
+  `roomCode` contained non-digit characters or was not 6 characters after normalization.
+</ResponseField>
+
+<ResponseField name="400 — Player name must be 32 characters or fewer" type="string">
+  `playerName` exceeded the 32-character limit.
+</ResponseField>
+
+<ResponseField name="400 — Invalid client identifier" type="string">
+  `clientId` exceeded 128 characters.
+</ResponseField>
+
+<ResponseField name="404 — Room not found." type="string">
+  The room code does not exist and no `settings` object was provided.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="409 — The game has already started." type="string">
+  The room exists but its status is no longer `waiting`, and the caller is a new player (not a reconnect).
+</ResponseField>
+
+<ResponseField name="409 — This room is full. The maximum is 20 players." type="string">
+  The room already has 20 players and cannot accept new members.
+</ResponseField>
+
+<ResponseField name="500 — Database error" type="string">
+  One of: `Failed to load room`, `Failed to create room`, `Failed to create player`, `Failed to update player`, `Failed to load player`, or `Failed to check room capacity` — all indicate a Supabase database error.
+</ResponseField>
 
 ## Example
 
@@ -98,8 +122,6 @@ const response = await fetch('/api/rooms/join', {
     clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     settings: {
       mafiaCount: 2,
-      doctor: true,
-      detective: true,
       lady: false,
       casualMode: false,
       customRoles: []

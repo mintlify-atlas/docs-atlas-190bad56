@@ -1,5 +1,5 @@
 ---
-title: "Roles in Mafia Night Game Explained"
+title: "Player Roles in Mafia Night Game: All Six Roles Explained"
 sidebarTitle: "Roles"
 description: "A complete breakdown of every built-in and custom role in Mafia Night Game, including night actions, visibility rules, and special interactions."
 ---
@@ -9,32 +9,32 @@ Mafia Night Game ships with **six built-in roles** — Mafia, Villager, Doctor, 
 ## Built-In Roles
 
 <CardGroup cols={2}>
-  <Card title="Mafia" icon="user-secret">
+  <Card title="Mafia" icon="user-secret" href="/how-to-play/game-flow">
     **Eliminate the townspeople without being discovered. Choose one target with your team each night.**
 
     Mafia members know each other's identities from the moment roles are revealed. Each night, Mafia players coordinate through a private in-app chat and each submit a `mafia_kill` action pointing to their chosen target. The server resolves a final target based on the most-voted pick (latest submission breaks ties). If no Mafia member's action survives Silencer interference, no kill is made that night.
   </Card>
-  <Card title="Villager" icon="users">
+  <Card title="Villager" icon="users" href="/how-to-play/game-flow">
     **Identify and vote out every Mafia member before they take control of the town.**
 
     Villagers have no night action. During the night phase they see a waiting screen ("The Town Sleeps") and rely entirely on daytime deduction and the voting phase to influence the game. They are the most common role and form the majority of the town.
   </Card>
-  <Card title="Doctor" icon="stethoscope">
+  <Card title="Doctor" icon="stethoscope" href="/how-to-play/game-flow">
     **Choose one player, including yourself, to protect from the Mafia each night.**
 
     The Doctor submits a `doctor_heal` action each night. If the Mafia's chosen kill target matches the Doctor's protection target, the kill is prevented and that player survives. The Doctor can protect themselves. If the Doctor is silenced by the Silencer, their protection action is blocked for that round.
   </Card>
-  <Card title="Detective" icon="magnifying-glass">
+  <Card title="Detective" icon="magnifying-glass" href="/how-to-play/game-flow">
     **Investigate one player each night to learn whether they belong to the Mafia.**
 
     The Detective submits a `detective_check` action each night. After the Narrator resolves the night, the Detective is shown whether their target is Mafia or not. If the Detective is silenced, their check is blocked. There is one important caveat: **investigating the Silencer always returns "not Mafia"**, regardless of any other factors (see the Silencer interaction note below).
   </Card>
-  <Card title="Silencer" icon="chess-queen">
+  <Card title="Silencer" icon="chess-queen" href="/how-to-play/game-flow">
     **Silence one player each night and block their night action for that round.**
 
     The Silencer (internally named `Lady`) submits a `lady_silence` action each night. The Silencer's action is processed **first** during night resolution, before all other roles. Any player who is silenced cannot have their night action take effect that round — their `doctor_heal`, `detective_check`, or `mafia_kill` action is discarded. The Silencer role is **disabled by default** and must be enabled by the host in the lobby settings.
   </Card>
-  <Card title="Narrator" icon="microphone">
+  <Card title="Narrator" icon="microphone" href="/how-to-play/game-flow">
     **Guide the game, see every role, and manage rounds without taking part in votes.**
 
     One player is randomly assigned the Narrator role when the host starts the game. The Narrator accesses the Game Director Console, sees a full player-roles dossier (all roles, live), and controls round transitions: they trigger the night phase and call the resolve. The Narrator never submits night actions, never votes, and can never be eliminated.
@@ -45,30 +45,38 @@ Mafia Night Game ships with **six built-in roles** — Mafia, Villager, Doctor, 
 
 Each role that takes a night action uses a typed action submitted to the server:
 
-| Role       | Action Type        | Effect                                     |
-|------------|--------------------|--------------------------------------------|
-| Mafia      | `mafia_kill`       | Eliminates the targeted player             |
-| Doctor     | `doctor_heal`      | Protects the targeted player from the kill |
-| Detective  | `detective_check`  | Reveals whether the target is Mafia        |
-| Silencer   | `lady_silence`     | Blocks the targeted player's night action  |
-| Villager   | *(none)*           | No night action                            |
-| Narrator   | *(none)*           | Controls round flow, no target             |
+<Accordion title="Mafia — mafia_kill">
+  Eliminates the targeted player. The server tallies all `mafia_kill` submissions from alive, non-silenced Mafia members and picks the most-voted target (latest submission timestamp breaks ties).
+</Accordion>
+<Accordion title="Doctor — doctor_heal">
+  Protects the targeted player from the Mafia kill. If the Mafia's chosen target matches the Doctor's protected target, the kill is prevented. The Doctor can protect themselves.
+</Accordion>
+<Accordion title="Detective — detective_check">
+  Reveals whether the targeted player is Mafia. The result is shown to the Detective after night resolution. **Checking the Silencer always returns "not Mafia"** — this is a deliberate server-side rule.
+</Accordion>
+<Accordion title="Silencer — lady_silence">
+  Blocks the targeted player's night action for that round. Processed before all other actions.
+</Accordion>
+<Accordion title="Villager — (none)">
+  No night action. Villagers see a waiting screen during the night phase.
+</Accordion>
+<Accordion title="Narrator — (none)">
+  Controls round flow. No night action target.
+</Accordion>
 
 ## Role Visibility Rules
 
-What each player can see about other players' roles depends entirely on their assignment:
+What each player can see about other players' roles depends entirely on their assignment. The server enforces these rules: the Narrator sees every player's role; Mafia members see each other; all other players see only their own role.
 
-| Role       | Can See                                    |
-|------------|--------------------------------------------|
-| Narrator   | Every player's role (full dossier)         |
-| Mafia      | Each other (all other Mafia members)       |
-| Doctor     | Only their own role                        |
-| Detective  | Only their own role                        |
-| Silencer   | Only their own role                        |
-| Villager   | Only their own role                        |
-| Custom     | Only their own role                        |
-
-The Narrator's view is labeled **"Narrator Eyes Only"** in the UI and is never exposed to other players.
+<Accordion title="Narrator — full dossier">
+  The Narrator sees every player's role at all times. This view is labeled **"Narrator Eyes Only"** in the UI and is never exposed to other players.
+</Accordion>
+<Accordion title="Mafia — fellow Mafia members">
+  Each Mafia player can see the identities of all other Mafia members from the moment roles are revealed.
+</Accordion>
+<Accordion title="Doctor, Detective, Silencer, Villager, Custom — own role only">
+  These roles can only see their own assignment. They cannot identify other players' roles through the app.
+</Accordion>
 
 ## Silencer Interactions
 

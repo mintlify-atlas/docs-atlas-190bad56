@@ -1,10 +1,10 @@
 ---
 title: "POST /api/rooms/round/vote — Submit or Update a Day Vote"
-sidebarTitle: "POST /round/vote"
-description: "Alive non-narrator players cast or update their elimination vote. Once every eligible player has voted, the server tallies results and resolves the round automatically."
+sidebarTitle: "Round Vote"
+description: "Alive non-narrator players cast or update their elimination vote. When all have voted, the server tallies the results and transitions the phase to idle."
 ---
 
-During the `'voting'` phase, each alive non-narrator player calls this endpoint to nominate a player for elimination. Votes are recorded individually and can be changed — the server always uses the most recent submission from each voter. As soon as the number of recorded votes equals the number of eligible voters, the server automatically tallies the results: the player with a **strict majority** is eliminated, ties produce no elimination, and the win condition is evaluated. The phase then transitions back to `'idle'` regardless of outcome, and a `lastVoteSummary` is attached to the round state for clients to display.
+During the `'voting'` phase, each alive non-narrator player calls this endpoint to nominate a player for elimination. Votes are recorded individually and can be changed — the server always uses the most recent submission from each voter. As soon as the number of recorded votes equals the number of eligible voters, the server automatically tallies the results: the player with the **highest vote count** (and no tie) is eliminated, ties produce no elimination, and the win condition is evaluated. The phase then transitions back to `'idle'` regardless of outcome, and a `lastVoteSummary` is attached to the round state for clients to display.
 
 ## Request
 
@@ -53,7 +53,7 @@ Vote resolution triggers automatically the moment `completedVoters >= totalVoter
 ## Error responses
 
 | Status | `error` message | Condition |
-|--------|-----------------|-----------|
+|--------|-----------------|-----------| 
 | `400` | `Missing roomCode or clientId` | Either identity field is absent or empty. |
 | `400` | `Choose a player before submitting your vote.` | `targetId` (and its alias `eliminatedPlayerId`) is absent or empty. |
 | `403` | `Player not found` | No player row matches `clientId` in this room. |

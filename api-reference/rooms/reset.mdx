@@ -1,10 +1,10 @@
 ---
-title: "POST /api/rooms/reset — Reset the Game to Lobby State"
-sidebarTitle: "POST /rooms/reset"
-description: "Resets a started room back to the waiting lobby. Clears all player roles, confirmed flags, narrator flags, and round state. Only the host may call this endpoint."
+title: "Reset the Game to Lobby State — POST /api/rooms/reset"
+sidebarTitle: "Reset Game"
+description: "Resets a room back to the waiting lobby. Clears all player roles, confirmed flags, narrator flags, and round state. Only the host may call this endpoint."
 ---
 
-The `/api/rooms/reset` endpoint returns a room to the `waiting` state after a game has concluded or when the host wants to start fresh with new role assignments. It strips every player's `role`, `has_confirmed`, and `is_narrator` flags back to their defaults, and clears `roundState` from the room's settings. The room's existing player list, host assignment, and base settings (mafia count, custom roles, etc.) are all preserved — only the game-session-specific state is wiped. This allows the same group to play multiple rounds without everyone having to re-join.
+The `/api/rooms/reset` endpoint returns a room to the `waiting` state after a game has concluded or when the host wants to start fresh with new role assignments. It strips every player's `role`, `has_confirmed`, and `is_narrator` flags back to their defaults, and clears `roundState` from the room's settings. The room's existing player list, host assignment, and base settings (`mafiaCount`, custom roles, etc.) are all preserved — only the game-session-specific state is wiped. This allows the same group to play multiple rounds without everyone having to re-join.
 
 ## Request
 
@@ -28,27 +28,57 @@ The `/api/rooms/reset` endpoint returns a room to the `waiting` state after a ga
 
 ## What Gets Reset
 
-| Field | Before reset | After reset |
-|-------|-------------|-------------|
-| Room `status` | `started` or `finished` | `waiting` |
-| Room `roundState` | RoundState object | `null` |
-| Player `role` | Assigned role string | `null` |
-| Player `has_confirmed` | `true` / `false` | `false` |
-| Player `is_narrator` | `true` / `false` | `false` |
+The following fields are cleared or reverted by this endpoint. Settings (`mafiaCount`, `doctor`, `detective`, `lady`, `casualMode`, `customRoles`) and the player roster are **not** affected.
 
-Settings (`mafiaCount`, `doctor`, `detective`, `lady`, `casualMode`, `customRoles`) and the player roster are **not** affected.
+<ResponseField name="Room status" type="string">
+  Set from `started` or `finished` back to `waiting`.
+</ResponseField>
+
+<ResponseField name="Room roundState" type="null">
+  Cleared to `null` — all round progress, actions, votes, and events are discarded.
+</ResponseField>
+
+<ResponseField name="Player role" type="null">
+  Each player's assigned role is set to `null`.
+</ResponseField>
+
+<ResponseField name="Player has_confirmed" type="boolean">
+  Reset to `false` for all players.
+</ResponseField>
+
+<ResponseField name="Player is_narrator" type="boolean">
+  Reset to `false` for all players.
+</ResponseField>
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
-| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
-| `403` | `Only host can reset the game` | The calling player exists but does not hold the host flag. |
-| `404` | `Room not found` | No room matches the provided `roomCode`. |
-| `405` | `Method not allowed` | Request was not `POST`. |
-| `500` | `Failed to reset players` | Supabase error while clearing player role data. |
-| `500` | `Failed to reset room` | Supabase error while updating the room status and settings. |
+<ResponseField name="400 — Missing roomCode or clientId" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="403 — Player not found" type="string">
+  No player with the given `clientId` exists in this room.
+</ResponseField>
+
+<ResponseField name="403 — Only host can reset the game" type="string">
+  The calling player exists but does not hold the host flag.
+</ResponseField>
+
+<ResponseField name="404 — Room not found" type="string">
+  No room matches the provided `roomCode`.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="500 — Failed to reset players" type="string">
+  Supabase error while clearing player role data.
+</ResponseField>
+
+<ResponseField name="500 — Failed to reset room" type="string">
+  Supabase error while updating the room status and settings.
+</ResponseField>
 
 ## Example
 

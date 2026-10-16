@@ -1,7 +1,7 @@
 ---
-title: "POST /api/rooms/start — Start the Game and Assign Roles"
-sidebarTitle: "POST /rooms/start"
-description: "Host starts the game: randomly selects a Narrator, shuffles and assigns roles to all other players per room settings, and transitions room status to started."
+title: "Start the Game and Assign Roles — POST /api/rooms/start"
+sidebarTitle: "Start Game"
+description: "Host starts the game: selects a random Narrator, assigns shuffled roles to all other players per room settings, and transitions room status to started."
 ---
 
 The `/api/rooms/start` endpoint kicks off a game session. It may only be called by the room host while the room is in `waiting` status and at least 2 players are present. The server picks one player at random to become the **Narrator** (who oversees the game but does not receive a gameplay role). All remaining players — the *participants* — receive shuffled roles according to the room's settings: `mafiaCount` Mafia roles are assigned first, then Doctor and Detective (always included), then Silencer if `lady` is enabled, then any custom roles in definition order, and finally enough Villager roles to fill the remaining slots. The room status is then set to `started` and `roundState` is cleared.
@@ -34,7 +34,7 @@ The `/api/rooms/start` endpoint kicks off a game session. It may only be called 
 
 1. **Narrator selection** — one player is chosen uniformly at random from the full player list and marked `is_narrator = true` with the `Narrator` role. They are excluded from all gameplay role assignment.
 2. **Role pool construction** — the remaining players (participants) receive roles in this priority order:
-   - `mafiaCount` × `Mafia` (clamped: minimum `1`, maximum `participants.length - 1`)
+   - `mafiaCount` × `Mafia` — clamped: minimum `1`, maximum `participants.length - 1` (computed as `Math.min(Math.max(settings.mafiaCount, 1), participants.length - 1)`)
    - `Doctor` (always included)
    - `Detective` (always included)
    - `Silencer` if `lady` is `true`
@@ -49,16 +49,37 @@ The `/api/rooms/start` endpoint kicks off a game session. It may only be called 
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
-| `400` | `At least 2 players are required.` | The room has fewer than 2 players (covers both the pre-check and the edge case where participants list is empty after Narrator selection). |
-| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
-| `403` | `Only host can start the game` | The calling player exists but does not hold the host flag. |
-| `404` | `Room not found` | No room matches the provided `roomCode`. |
-| `405` | `Method not allowed` | Request was not `POST`. |
-| `409` | `Room already started` | The room's status is no longer `waiting`. |
-| `500` | `Failed to assign roles` / `Failed to assign narrator` / `Failed to update room status` | Supabase database error during role assignment or room status update. |
+<ResponseField name="400 — Missing roomCode or clientId" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="400 — At least 2 players are required." type="string">
+  The room has fewer than 2 players total, or there are no participants left after Narrator selection.
+</ResponseField>
+
+<ResponseField name="403 — Player not found" type="string">
+  No player with the given `clientId` exists in this room.
+</ResponseField>
+
+<ResponseField name="403 — Only host can start the game" type="string">
+  The calling player exists but does not hold the host flag.
+</ResponseField>
+
+<ResponseField name="404 — Room not found" type="string">
+  No room matches the provided `roomCode`.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="409 — Room already started" type="string">
+  The room's status is no longer `waiting`.
+</ResponseField>
+
+<ResponseField name="500 — Database error" type="string">
+  One of: `Failed to assign roles`, `Failed to assign narrator`, or `Failed to update room status` — indicates a Supabase database error during role assignment or room status update.
+</ResponseField>
 
 ## Example
 

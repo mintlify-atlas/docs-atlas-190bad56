@@ -11,16 +11,16 @@ Mafia Night Game is built on three distinct layers that each own a clear respons
 The frontend is a static SPA compiled by Vite and served from Vercel's edge network. Because it is purely static, there is no server-side rendering and no build-time database access.
 
 <CardGroup cols={2}>
-  <Card title="Polling for updates" icon="rotate">
+  <Card title="Polling for updates" icon="rotate" href="/architecture/overview#polling-architecture">
     The app polls `POST /api/rooms/state` every **2 000 ms** using `setInterval`. No WebSocket connections or Supabase Realtime subscriptions are used. The interval is guarded by an `inFlight` flag so that a slow response never spawns a second concurrent request.
   </Card>
-  <Card title="Session persistence" icon="hard-drive">
+  <Card title="Session persistence" icon="hard-drive" href="/architecture/security">
     When a player successfully joins a room, the pair `{ roomCode, playerName }` is written to localStorage under the key `mafia_session_v2`. On the next page load the app attempts a silent re-join to restore the session automatically.
   </Card>
-  <Card title="Client identity" icon="fingerprint">
+  <Card title="Client identity" icon="fingerprint" href="/architecture/security">
     Each browser tab generates a random UUID on first visit and stores it in localStorage under the key `mafia_client_id`. This identifier, not a real authentication token, is sent with every API request so the server can look up the correct player record.
   </Card>
-  <Card title="No direct DB access" icon="shield-halved">
+  <Card title="No direct DB access" icon="shield-halved" href="/architecture/database-schema">
     The Supabase JavaScript SDK is **not** used in browser code. All game state arrives through the serverless API, which returns a player-specific, filtered projection of the room.
   </Card>
 </CardGroup>
@@ -38,10 +38,10 @@ All game logic lives in TypeScript handlers under the `api/` directory. Vercel b
 ## Database — Supabase PostgreSQL
 
 <CardGroup cols={2}>
-  <Card title="Two tables" icon="table">
+  <Card title="Two tables" icon="table" href="/architecture/database-schema">
     All game data lives in `rooms` and `players`. The `rooms.settings` column is JSONB and stores both the room configuration (`RoomSettings`) and the full live `RoundState` object.
   </Card>
-  <Card title="Row-Level Security" icon="lock">
+  <Card title="Row-Level Security" icon="lock" href="/architecture/security">
     RLS is enabled on both tables. The `anon` and `authenticated` Supabase roles have **all permissions revoked**, so no browser client — even one with the anon key — can read or write game data directly.
   </Card>
 </CardGroup>

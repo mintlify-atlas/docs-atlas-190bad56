@@ -1,6 +1,6 @@
 ---
-title: "POST /api/rooms/settings — Update Room Settings"
-sidebarTitle: "POST /rooms/settings"
+title: "Update Room Settings — POST /api/rooms/settings"
+sidebarTitle: "Room Settings"
 description: "Updates the game configuration for a waiting room. Only the host may call this endpoint, and only before the game has started. Returns ok: true on success."
 ---
 
@@ -20,27 +20,27 @@ The `/api/rooms/settings` endpoint allows the room host to adjust game configura
   The full replacement settings object. All fields are sanitized server-side — values outside valid ranges are clamped to defaults.
 
   <Expandable title="settings fields" defaultOpen>
-    <ParamField body="mafiaCount" type="number" required>
+    <ParamField body="mafiaCount" type="number" optional>
       Number of Mafia roles to assign when the game starts. Clamped to `1–10`. Defaults to `1` if invalid.
     </ParamField>
 
-    <ParamField body="doctor" type="boolean" required>
+    <ParamField body="doctor" type="boolean" optional>
       Whether to include the Doctor role. The server always forces this to `true` regardless of the submitted value.
     </ParamField>
 
-    <ParamField body="detective" type="boolean" required>
+    <ParamField body="detective" type="boolean" optional>
       Whether to include the Detective role. The server always forces this to `true` regardless of the submitted value.
     </ParamField>
 
-    <ParamField body="lady" type="boolean" required>
+    <ParamField body="lady" type="boolean" optional>
       Whether to include the Silencer (Lady) role. `false` by default.
     </ParamField>
 
-    <ParamField body="casualMode" type="boolean" required>
+    <ParamField body="casualMode" type="boolean" optional>
       Whether casual / relaxed rules are active. `false` by default.
     </ParamField>
 
-    <ParamField body="customRoles" type="array" required>
+    <ParamField body="customRoles" type="array" optional>
       Custom role definitions. Up to **10** unique roles (case-insensitive deduplication). Names are trimmed and capped at 24 characters. Counts are clamped to `1–10`.
 
       <Expandable title="customRoles item fields">
@@ -67,15 +67,33 @@ The `/api/rooms/settings` endpoint allows the room host to adjust game configura
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `400` | `Missing roomCode, clientId, or settings` | One or more required body fields are absent or empty. |
-| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
-| `403` | `Only host can update settings` | The calling player exists but does not hold the host flag. |
-| `404` | `Room not found` | No room matches the provided `roomCode`. |
-| `405` | `Method not allowed` | Request was not `POST`. |
-| `409` | `Room already started` | The room's status is no longer `waiting`. |
-| `500` | `Failed to update settings` | Supabase database error while persisting the new settings. |
+<ResponseField name="400 — Missing roomCode, clientId, or settings" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="403 — Player not found" type="string">
+  No player with the given `clientId` exists in this room.
+</ResponseField>
+
+<ResponseField name="403 — Only host can update settings" type="string">
+  The calling player exists but does not hold the host flag.
+</ResponseField>
+
+<ResponseField name="404 — Room not found" type="string">
+  No room matches the provided `roomCode`.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="409 — Room already started" type="string">
+  The room's status is no longer `waiting`.
+</ResponseField>
+
+<ResponseField name="500 — Failed to update settings" type="string">
+  Supabase database error while persisting the new settings.
+</ResponseField>
 
 ## Example
 
@@ -88,8 +106,6 @@ const response = await fetch('/api/rooms/settings', {
     clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     settings: {
       mafiaCount: 3,
-      doctor: true,
-      detective: true,
       lady: true,
       casualMode: false,
       customRoles: [

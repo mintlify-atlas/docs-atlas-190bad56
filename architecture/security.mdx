@@ -9,10 +9,10 @@ Mafia Night Game is designed on a simple principle: secrets stay on the server a
 ## Credential Isolation
 
 <CardGroup cols={2}>
-  <Card title="Service-role key stays server-side" icon="key">
+  <Card title="Service-role key stays server-side" icon="key" href="/configuration/environment-variables">
     `SUPABASE_SERVICE_ROLE_KEY` is read only inside the Vercel serverless functions. It is never referenced in any Vite-bundled source file and is never prefixed with `VITE_`, which would cause Vite to embed it in the browser bundle.
   </Card>
-  <Card title="No browser secrets" icon="eye-slash">
+  <Card title="No browser secrets" icon="eye-slash" href="/architecture/overview">
     The browser holds only a random UUID (`mafia_client_id`) that it generated itself. This identifier is not a signed token and cannot be used to access Supabase directly. It is simply a lookup key the server uses to find the correct player record.
   </Card>
 </CardGroup>

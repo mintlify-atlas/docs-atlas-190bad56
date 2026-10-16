@@ -1,10 +1,10 @@
 ---
-title: "GET /api/rooms/cleanup — Delete Stale Rooms and Players"
-sidebarTitle: "GET /rooms/cleanup"
-description: "Vercel Cron endpoint that purges players inactive for 20+ minutes and removes any rooms that are left empty as a result. Requires a Bearer token for authorization."
+title: "Delete Stale Rooms and Players — GET /api/rooms/cleanup"
+sidebarTitle: "Cleanup Cron"
+description: "Cron endpoint that purges players inactive for 20+ minutes and removes rooms left empty as a result. Requires a Bearer token. Accepts GET or POST."
 ---
 
-The `/api/rooms/cleanup` endpoint is a scheduled maintenance job invoked automatically by Vercel Cron at **03:00 UTC daily**. It performs a two-phase cleanup: first, it deletes all player rows whose `last_seen` timestamp is older than **20 minutes** relative to the time of the call; second, it scans every remaining room and deletes any room that has zero players left after the first phase. The response includes a count of how many rooms were removed. This endpoint must not be called by game clients — it is protected by a `Bearer` token secret set in the `CRON_SECRET` environment variable.
+The `/api/rooms/cleanup` endpoint is a scheduled maintenance job invoked automatically by Vercel Cron. It performs a two-phase cleanup: first, it deletes all player rows whose `last_seen` timestamp is older than **20 minutes** relative to the time of the call; second, it scans every remaining room and deletes any room that has zero players left after the first phase. The response includes a count of how many rooms were removed. This endpoint must not be called by game clients — it is protected by a `Bearer` token secret set in the `CRON_SECRET` environment variable.
 
 ## Authentication
 
@@ -23,7 +23,7 @@ If the header is missing, does not match the `Bearer` scheme, or the token does 
 </ParamField>
 
 <Info>
-  This endpoint accepts both `GET` and `POST` methods. The Vercel Cron scheduler invokes it as `GET`. Attempting any other HTTP method returns `405 Method Not Allowed`.
+  This endpoint accepts both `GET` and `POST` methods. The Vercel Cron scheduler typically invokes it as `GET`. Attempting any other HTTP method returns `405 Method Not Allowed`.
 </Info>
 
 ## Cleanup Behaviour
@@ -51,13 +51,25 @@ All rooms are loaded with their player counts. Any room whose player count dropp
 
 ## Error Responses
 
-| Status | Error message | Cause |
-|--------|---------------|-------|
-| `401` | `Unauthorized` | `Authorization` header is absent, malformed, or the token does not match `CRON_SECRET`. |
-| `405` | `Method not allowed` | Request method is not `GET` or `POST`. |
-| `500` | `Failed to delete stale players` | Supabase error during Phase 1 player deletion. |
-| `500` | `Failed to load rooms` | Supabase error while fetching rooms with player counts. |
-| `500` | `Failed to delete empty rooms` | Supabase error during Phase 2 room deletion. |
+<ResponseField name="401 — Unauthorized" type="string">
+  `Authorization` header is absent, malformed, or the token does not match `CRON_SECRET`.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request method is not `GET` or `POST`.
+</ResponseField>
+
+<ResponseField name="500 — Failed to delete stale players" type="string">
+  Supabase error during Phase 1 player deletion.
+</ResponseField>
+
+<ResponseField name="500 — Failed to load rooms" type="string">
+  Supabase error while fetching rooms with player counts.
+</ResponseField>
+
+<ResponseField name="500 — Failed to delete empty rooms" type="string">
+  Supabase error during Phase 2 room deletion.
+</ResponseField>
 
 ## Example
 

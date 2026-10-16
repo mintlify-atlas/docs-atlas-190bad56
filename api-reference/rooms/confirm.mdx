@@ -1,0 +1,87 @@
+---
+title: "Confirm Role Assignment — POST /api/rooms/confirm"
+sidebarTitle: "Confirm Role"
+description: "Marks a player as having acknowledged their assigned role. When every player in the room has confirmed, the room status advances to finished."
+---
+
+The `/api/rooms/confirm` endpoint is called by each player after they have reviewed their assigned role on the reveal screen. It sets `has_confirmed = true` on the player row and then checks whether all players in the room have now confirmed. If every player has confirmed, the room's `status` is advanced to `"finished"`, signalling to all polling clients that the reveal phase is complete and the active game phase can begin.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code of the room. Trimmed and normalized before lookup.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID of the player confirming their role.
+</ParamField>
+
+## Response
+
+A successful request returns HTTP `200` with the following `data` object.
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the confirmation was recorded successfully, regardless of whether all players have now confirmed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Behaviour Details
+
+After setting the calling player's `has_confirmed` flag to `true`, the server fetches all players in the room and checks whether every one has `has_confirmed = true`. If so, the room's `status` column is updated to `"finished"`. Polling clients will detect this transition on their next `/api/rooms/state` call.
+
+<Note>
+  The `ok: true` response does **not** indicate that all players have confirmed — only that this player's confirmation was saved. Clients should continue polling `/api/rooms/state` and observe the room `status` transitioning to `"finished"` to know when everyone is ready.
+</Note>
+
+## Error Responses
+
+<ResponseField name="400 — Missing roomCode or clientId" type="string">
+  One or more required body fields are absent or empty.
+</ResponseField>
+
+<ResponseField name="404 — Room not found" type="string">
+  No room matches the provided `roomCode`.
+</ResponseField>
+
+<ResponseField name="404 — Player not found" type="string">
+  No player with the given `clientId` exists in this room.
+</ResponseField>
+
+<ResponseField name="405 — Method not allowed" type="string">
+  Request was not `POST`.
+</ResponseField>
+
+<ResponseField name="500 — Failed to confirm role" type="string">
+  Supabase error while updating the player's `has_confirmed` flag.
+</ResponseField>
+
+<ResponseField name="500 — Failed to load players" type="string">
+  Supabase error while checking whether all players have confirmed.
+</ResponseField>
+
+<ResponseField name="500 — Failed to finish room" type="string">
+  Supabase error while advancing the room status to `finished`.
+</ResponseField>
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/confirm', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+  })
+});
+const { data } = await response.json();
+// data.ok === true — this player's role is confirmed
+console.log(data.ok);
+```
+
+<Tip>
+  After calling this endpoint, continue polling `/api/rooms/state`. Once the room `status` transitions to `"finished"`, all players have confirmed their roles and the game can proceed to the active phase.
+</Tip>

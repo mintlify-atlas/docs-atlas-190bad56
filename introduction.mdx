@@ -18,28 +18,28 @@ Mafia Night Game is built on four focused layers that work together cleanly:
 ## Key features
 
 <CardGroup cols={2}>
-  <Card title="6-Digit Room Codes" icon="door-open">
+  <Card title="6-Digit Room Codes" icon="door-open" href="/how-to-play/overview">
     The host creates a room and shares a short numeric code. Anyone with the code can join from any browser — no account required. Each room holds up to 20 players.
   </Card>
-  <Card title="Built-In Roles" icon="masks-theater">
+  <Card title="Built-In Roles" icon="masks-theater" href="/how-to-play/roles">
     Five core roles ship out of the box: **Mafia** (eliminate townspeople), **Villager** (vote out Mafia), **Doctor** (protect a player each night), **Detective** (investigate a player each night), and **Silencer** (block a player's night action).
   </Card>
-  <Card title="Custom Roles" icon="wand-magic-sparkles">
+  <Card title="Custom Roles" icon="wand-magic-sparkles" href="/configuration/room-settings">
     The host can define additional custom roles with a name and player count alongside the standard roles. Custom roles appear on the role-reveal screen with a default description.
   </Card>
-  <Card title="Narrator Mode" icon="microphone">
+  <Card title="Narrator Mode" icon="microphone" href="/how-to-play/roles">
     One player can take the Narrator role. The narrator sees the full game state — every player's role and all round events — but does not participate in votes or night actions.
   </Card>
-  <Card title="Night Actions & Voting" icon="moon">
+  <Card title="Night Actions & Voting" icon="moon" href="/how-to-play/game-flow">
     Each round moves through a night phase (Mafia, Doctor, Detective, and Silencer each submit their action) and a day voting phase. The server resolves actions and records events in the round log.
   </Card>
-  <Card title="Graveyard & Mafia Chat" icon="comments">
+  <Card title="Graveyard & Mafia Chat" icon="comments" href="/how-to-play/game-flow">
     Eliminated players can communicate in a separate graveyard channel. Mafia members share a private team chat throughout the game for coordination.
   </Card>
-  <Card title="Casual Mode" icon="face-smile">
+  <Card title="Casual Mode" icon="face-smile" href="/configuration/room-settings">
     Enable casual mode in room settings to relax the strict role-reveal flow, making the game friendlier for first-time players or smaller groups.
   </Card>
-  <Card title="Session Persistence" icon="rotate">
+  <Card title="Session Persistence" icon="rotate" href="/architecture/overview">
     Each browser generates a random client identifier stored in `localStorage`. If a player closes and reopens their tab, they re-join their existing player slot automatically.
   </Card>
 </CardGroup>

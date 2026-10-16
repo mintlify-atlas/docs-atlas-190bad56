@@ -1,5 +1,5 @@
 ---
-title: "Game Phases and Round Flow in Mafia"
+title: "Mafia Night Game: Phases, Round Flow & Win Conditions"
 sidebarTitle: "Game Flow"
 description: "A technical walkthrough of every game phase, round lifecycle, night action resolution order, voting tallying, and win condition logic in Mafia Night Game."
 ---
@@ -10,13 +10,21 @@ Every Mafia Night Game session moves through a defined set of phases — from pl
 
 Before a round ever starts, the app tracks where each player is in the session setup using the `GamePhase` enum:
 
-| Phase                | Description                                                                                   |
-|----------------------|-----------------------------------------------------------------------------------------------|
-| `JOIN`               | The entry screen — players have not yet joined a room.                                        |
-| `LOBBY`              | Players are in the room waiting for the host to start. Settings can be adjusted here.         |
-| `REVEAL`             | The game has started; this player needs to tap and confirm their secret role.                 |
-| `WAITING_FOR_OTHERS` | This player has confirmed their role; waiting for all other players to confirm.               |
-| `READY_TO_PLAY`      | All players have confirmed. The game is active and rounds can begin.                          |
+<Accordion title="JOIN — Entry screen">
+  The entry screen. Players have not yet joined a room.
+</Accordion>
+<Accordion title="LOBBY — Pre-game waiting room">
+  Players are in the room waiting for the host to start. Settings can be adjusted here.
+</Accordion>
+<Accordion title="REVEAL — Role confirmation screen">
+  The game has started; this player needs to tap and confirm their secret role.
+</Accordion>
+<Accordion title="WAITING_FOR_OTHERS — Pending confirmations">
+  This player has confirmed their role; waiting for all other players to confirm.
+</Accordion>
+<Accordion title="READY_TO_PLAY — Game active">
+  All players have confirmed. The game is active and rounds can begin.
+</Accordion>
 
 The Narrator bypasses `REVEAL` and `WAITING_FOR_OTHERS` — they are automatically marked as confirmed when the game starts.
 

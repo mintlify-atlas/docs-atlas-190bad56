@@ -73,6 +73,7 @@
               "api-reference/rooms/state",
               "api-reference/rooms/settings",
               "api-reference/rooms/start",
+              "api-reference/rooms/confirm",
               "api-reference/rooms/leave",
               "api-reference/rooms/reset",
               "api-reference/rooms/cleanup"
