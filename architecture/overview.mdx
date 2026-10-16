@@ -1,0 +1,97 @@
+---
+title: "Mafia Night Game: Three-Layer Architecture Overview"
+sidebarTitle: "Overview"
+description: "A deep dive into the three-layer architecture of Mafia Night Game: React SPA frontend, Vercel serverless API functions, and a Supabase PostgreSQL database."
+---
+
+Mafia Night Game is built on three distinct layers that each own a clear responsibility: a React single-page application served as static assets, a set of Vercel serverless functions that form the entire game API, and a Supabase PostgreSQL database that holds all persistent state. No layer bypasses another — the browser never touches the database directly, and the serverless functions hold no in-memory state between invocations.
+
+## Frontend — React 19 + Vite + TypeScript + Tailwind
+
+The frontend is a static SPA compiled by Vite and served from Vercel's edge network. Because it is purely static, there is no server-side rendering and no build-time database access.
+
+<CardGroup cols={2}>
+  <Card title="Polling for updates" icon="rotate">
+    The app polls `POST /api/rooms/state` every **2 000 ms** using `setInterval`. No WebSocket connections or Supabase Realtime subscriptions are used. The interval is guarded by an `inFlight` flag so that a slow response never spawns a second concurrent request.
+  </Card>
+  <Card title="Session persistence" icon="hard-drive">
+    When a player successfully joins a room, the pair `{ roomCode, playerName }` is written to localStorage under the key `mafia_session_v2`. On the next page load the app attempts a silent re-join to restore the session automatically.
+  </Card>
+  <Card title="Client identity" icon="fingerprint">
+    Each browser tab generates a random UUID on first visit and stores it in localStorage under the key `mafia_client_id`. This identifier, not a real authentication token, is sent with every API request so the server can look up the correct player record.
+  </Card>
+  <Card title="No direct DB access" icon="shield-halved">
+    The Supabase JavaScript SDK is **not** used in browser code. All game state arrives through the serverless API, which returns a player-specific, filtered projection of the room.
+  </Card>
+</CardGroup>
+
+## API Layer — Vercel Serverless Functions
+
+All game logic lives in TypeScript handlers under the `api/` directory. Vercel bundles each file as an independent serverless function.
+
+- Every game route is a **POST** handler. Only the cron cleanup endpoint accepts GET.
+- Each handler validates and normalises its inputs before touching the database.
+- Handlers authenticate the caller by looking up `clientId` in the `players` table — there is no JWT or session cookie.
+- All database queries use the **`supabaseAdmin`** client initialised with the `SUPABASE_SERVICE_ROLE_KEY` environment variable. This key is never exposed to the browser.
+- Because serverless functions are stateless between invocations, the database is the single source of truth for every piece of game state.
+
+## Database — Supabase PostgreSQL
+
+<CardGroup cols={2}>
+  <Card title="Two tables" icon="table">
+    All game data lives in `rooms` and `players`. The `rooms.settings` column is JSONB and stores both the room configuration (`RoomSettings`) and the full live `RoundState` object.
+  </Card>
+  <Card title="Row-Level Security" icon="lock">
+    RLS is enabled on both tables. The `anon` and `authenticated` Supabase roles have **all permissions revoked**, so no browser client — even one with the anon key — can read or write game data directly.
+  </Card>
+</CardGroup>
+
+## API Routes
+
+The table below lists every endpoint and its purpose.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/rooms/join` | Create a new room (host) or join an existing one |
+| `POST` | `/api/rooms/state` | Poll room state — returns a player-specific projection |
+| `POST` | `/api/rooms/settings` | Host updates room settings (role counts, toggles) |
+| `POST` | `/api/rooms/start` | Host starts the game and assigns roles to all players |
+| `POST` | `/api/rooms/confirm` | Player acknowledges and confirms their assigned role |
+| `POST` | `/api/rooms/leave` | Player removes themselves from the room |
+| `POST` | `/api/rooms/reset` | Host resets the game back to the lobby |
+| `POST` | `/api/rooms/round/start` | Narrator begins a new night round |
+| `POST` | `/api/rooms/round/action` | Player submits a night action or sends a chat message |
+| `POST` | `/api/rooms/round/resolve` | Narrator resolves the night and applies results |
+| `POST` | `/api/rooms/round/vote` | Player submits a daytime elimination vote |
+| `GET` | `/api/rooms/cleanup` | Vercel Cron job — deletes stale rooms |
+
+## Polling Architecture
+
+Rather than maintaining persistent connections, the client uses a simple polling loop:
+
+```typescript
+const interval = window.setInterval(refresh, 2000);
+```
+
+An `inFlight` boolean prevents overlapping requests if a poll response arrives late. When the component unmounts (the player leaves the room), `active` is set to `false` and the interval is cleared with `window.clearInterval`.
+
+<Note>
+  There are no WebSocket connections and no Supabase Realtime subscriptions anywhere in the application. All live updates arrive exclusively through the polling interval.
+</Note>
+
+## Cron Cleanup Job
+
+Vercel's built-in cron scheduler invokes `GET /api/rooms/cleanup` once per day at **03:00 UTC** (configured via `vercel.json`). The handler deletes rooms that have been inactive beyond a set threshold, keeping the database lean without any manual intervention.
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/rooms/cleanup",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
+```
+
+The cleanup endpoint requires a valid `Authorization: Bearer {CRON_SECRET}` header. Vercel supplies this header automatically when it triggers the cron; unauthenticated calls are rejected.

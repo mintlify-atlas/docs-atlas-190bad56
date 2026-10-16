@@ -1,0 +1,153 @@
+---
+title: "Mafia Night Game: Room Settings Complete Reference"
+sidebarTitle: "Room Settings"
+description: "Complete reference for every RoomSettings field — defaults, server-side validation rules, custom roles, and the player-count cap enforced at game start."
+---
+
+Room settings control how a Mafia Night Game session is configured before play begins. Only the **host** — the player whose `isHost` flag is `true` — can modify settings, and changes are accepted only while the room's status is `'waiting'`. Once the game starts the settings endpoint returns `409 Room already started` and all further update attempts are rejected. Every value sent by the client is run through `sanitizeSettings()` on the server, so invalid or out-of-range values are silently corrected rather than causing errors.
+
+## Default settings
+
+When a room is first created, `DEFAULT_SETTINGS` from `server/roomUtils.ts` is applied automatically:
+
+```json
+{
+  "mafiaCount": 1,
+  "doctor": true,
+  "detective": true,
+  "lady": false,
+  "casualMode": false,
+  "customRoles": []
+}
+```
+
+The `MAX_PLAYERS_PER_ROOM` constant is **20**. Joining a full room returns `409 This room is full. The maximum is 20 players.`
+
+## Settings fields
+
+<ParamField body="mafiaCount" type="number" default="1">
+  The number of Mafia players to assign when the game starts. The server
+  clamps this with `Math.max(1, Math.min(10, Math.floor(value)))`, so the
+  effective range is **1 – 10**. At game start an additional cap is applied:
+  `mafiaCount` cannot exceed `participants.length - 1`, ensuring at least one
+  non-Mafia player is always present.
+</ParamField>
+
+<ParamField body="doctor" type="boolean" default="true">
+  Controls whether a Doctor role is included. This field is **hardcoded to
+  `true`** inside `sanitizeSettings()` regardless of what the client sends —
+  the Doctor is always part of every game and cannot be disabled.
+</ParamField>
+
+<ParamField body="detective" type="boolean" default="true">
+  Controls whether a Detective role is included. Like `doctor`, this field is
+  **hardcoded to `true`** inside `sanitizeSettings()` and cannot be toggled
+  off by the client.
+</ParamField>
+
+<ParamField body="lady" type="boolean" default="false">
+  Enables the **Silencer** role (internally named `LADY`). When `true`, one
+  player is assigned the Silencer role, which can mute a target during the
+  night phase. Accepts any boolean value from the client; non-boolean inputs
+  fall back to `false`.
+</ParamField>
+
+<ParamField body="casualMode" type="boolean" default="false">
+  When `true`, night actions and the voting phase are disabled inside the app.
+  Players still receive their roles, but the structured round flow — mafia
+  kills, doctor heals, detective checks, and elimination votes — is not
+  enforced by the UI. Useful for groups who prefer to run the game verbally
+  and only use the app for role distribution. Accepts any boolean value;
+  non-boolean inputs fall back to `false`.
+</ParamField>
+
+<ParamField body="customRoles" type="CustomRoleSetting[]" default="[]">
+  An array of custom role objects to include alongside the standard roles.
+  Each element must conform to the `CustomRoleSetting` interface:
+
+  <ParamField body="name" type="string" required>
+    Display name for the custom role. Trimmed of surrounding whitespace and
+    truncated to **24 characters** server-side. Empty strings and duplicate
+    names (case-insensitive) are ignored.
+  </ParamField>
+
+  <ParamField body="count" type="number" required>
+    How many players should receive this role. Clamped server-side to
+    `Math.max(1, Math.min(10, Math.floor(value)))`, giving an effective range
+    of **1 – 10**. Non-finite or non-number values default to `1`.
+  </ParamField>
+
+  A maximum of **10 distinct custom roles** are retained per room; any entries
+  beyond the tenth are silently dropped.
+</ParamField>
+
+## Example settings object
+
+The following JSON represents a fully populated settings payload as it would
+be stored in Supabase after passing through `sanitizeSettings()`:
+
+```json
+{
+  "mafiaCount": 3,
+  "doctor": true,
+  "detective": true,
+  "lady": true,
+  "casualMode": false,
+  "customRoles": [
+    { "name": "Godfather", "count": 1 },
+    { "name": "Vigilante", "count": 1 }
+  ]
+}
+```
+
+## Server-side sanitization
+
+All settings updates flow through the `POST /api/rooms/settings` endpoint.
+The handler performs these checks **in order** before writing to the database:
+
+1. Verifies the request method is `POST`.
+2. Looks up the room by its normalized code — returns `404` if not found.
+3. Rejects the request with `409` if `room.status !== 'waiting'`.
+4. Confirms the requesting `clientId` belongs to the room's host — returns `403` otherwise.
+5. Passes the raw `settings` body through `sanitizeSettings()`, which corrects
+   every field to a known-good value.
+6. Writes the sanitized object to the `rooms` table.
+
+Because sanitization happens on the server, clients cannot inject out-of-range
+numbers, flip `doctor` or `detective` to `false`, or smuggle in more than 10
+custom roles.
+
+## Updating settings via the API
+
+```http
+POST /api/rooms/settings
+Content-Type: application/json
+
+{
+  "roomCode": "123456",
+  "clientId": "<your-client-id>",
+  "settings": {
+    "mafiaCount": 2,
+    "lady": true,
+    "casualMode": false,
+    "customRoles": [
+      { "name": "Spy", "count": 1 }
+    ]
+  }
+}
+```
+
+A successful update returns:
+
+```json
+{ "data": { "ok": true } }
+```
+
+<Tip>
+  Custom roles are purely **cosmetic label roles**. The app assigns them to
+  players and displays the role name on the role-reveal screen, but custom
+  roles do not receive dedicated night-action buttons, voting powers, or any
+  special game-logic treatment. They are ideal for adding flavour (e.g.
+  "Godfather", "Spy", "Jester") to a session that is narrated verbally or run
+  in casual mode.
+</Tip>

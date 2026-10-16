@@ -1,0 +1,165 @@
+---
+title: "POST /api/rooms/state — Poll Room State for a Player"
+sidebarTitle: "POST /rooms/state"
+description: "Returns a player-scoped snapshot of the room, including settings, player list, and round state. Updates the caller's heartbeat. Polled every 2 seconds by the frontend."
+---
+
+The `/api/rooms/state` endpoint is the heartbeat and state-sync mechanism for the entire game. The frontend polls it every **2 seconds** for every connected player. On each call the server updates the requesting player's `last_seen` timestamp, which keeps them active in the stale-player cleanup logic. The response is carefully filtered: roles are only revealed to the player who holds them, to their Mafia teammates, and to the Narrator. Round state fields such as `actions`, `votes`, `events`, and chat messages are scoped to what each role is permitted to see.
+
+## Request
+
+<ParamField body="roomId" type="string" required>
+  The UUID of the room, obtained from the `data.roomId` field returned by `/api/rooms/join`.
+</ParamField>
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code. Both `roomId` and `roomCode` must match the same room row; this acts as a secondary guard against accidental cross-room reads.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID identifying the requesting player. Used to determine role visibility and to update the heartbeat.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="id" type="string">
+      Room UUID, matching the `roomId` sent in the request.
+    </ResponseField>
+
+    <ResponseField name="status" type="string">
+      Current lifecycle status of the room. One of `waiting`, `started`, or `finished`.
+    </ResponseField>
+
+    <ResponseField name="settings" type="object">
+      Sanitized room configuration.
+
+      <Expandable title="settings fields">
+        <ResponseField name="mafiaCount" type="number">
+          Number of Mafia roles assigned for this game.
+        </ResponseField>
+        <ResponseField name="doctor" type="boolean">
+          Whether the Doctor role is active. Always `true`.
+        </ResponseField>
+        <ResponseField name="detective" type="boolean">
+          Whether the Detective role is active. Always `true`.
+        </ResponseField>
+        <ResponseField name="lady" type="boolean">
+          Whether the Silencer (Lady) role is active.
+        </ResponseField>
+        <ResponseField name="casualMode" type="boolean">
+          Whether casual mode is enabled.
+        </ResponseField>
+        <ResponseField name="customRoles" type="array">
+          Array of `{ name: string, count: number }` custom role definitions.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="players" type="array">
+      Ordered list of players in the room (sorted by join time, ascending). Each object is filtered to protect role secrecy.
+
+      <Expandable title="player object fields">
+        <ResponseField name="id" type="string">
+          Player UUID (stable across reconnects).
+        </ResponseField>
+        <ResponseField name="clientId" type="string">
+          Populated with the real client UUID **only** for the requesting player. Empty string `""` for all other players.
+        </ResponseField>
+        <ResponseField name="name" type="string">
+          Display name of the player.
+        </ResponseField>
+        <ResponseField name="role" type="string | undefined">
+          The assigned role (`Mafia`, `Villager`, `Doctor`, `Detective`, `Silencer`, `Narrator`). Visible only to: the player themselves, Mafia teammates (Mafia players can see each other's `Mafia` role), and the Narrator. `undefined` for all other viewers.
+        </ResponseField>
+        <ResponseField name="hasConfirmed" type="boolean">
+          Whether the player has acknowledged their role in the reveal screen.
+        </ResponseField>
+        <ResponseField name="isHost" type="boolean">
+          Whether this player is the current room host.
+        </ResponseField>
+        <ResponseField name="isNarrator" type="boolean">
+          Whether this player is the Narrator for this game.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="roundState" type="object | null">
+      `null` when no game round has started. Otherwise a `RoundState` object, filtered by the requesting player's role.
+
+      <Expandable title="roundState fields">
+        <ResponseField name="round" type="number">
+          The current round number (1-indexed).
+        </ResponseField>
+        <ResponseField name="phase" type="string">
+          Current round phase: `idle`, `night`, or `voting`.
+        </ResponseField>
+        <ResponseField name="actions" type="array">
+          Night actions submitted so far. Narrator sees all; other players see only their own actions.
+        </ResponseField>
+        <ResponseField name="votes" type="array">
+          Votes cast during the voting phase. Narrator sees all; other players see only their own vote.
+        </ResponseField>
+        <ResponseField name="events" type="array">
+          Narrative event log. Visible to the Narrator only; empty array for all other players.
+        </ResponseField>
+        <ResponseField name="eliminatedPlayerIds" type="array">
+          UUIDs of players who have been eliminated from the game.
+        </ResponseField>
+        <ResponseField name="lastResult" type="object | null">
+          Resolution outcome of the most recent night. Visible to the Narrator only; `null` for all other players.
+        </ResponseField>
+        <ResponseField name="lastVoteSummary" type="object | null">
+          Vote tally summary from the most recent voting phase.
+        </ResponseField>
+        <ResponseField name="gameResult" type="object | null">
+          Final game outcome (`winner`, `message`, `round`, `createdAt`) once the game concludes. `null` while the game is in progress.
+        </ResponseField>
+        <ResponseField name="graveyardMessages" type="array">
+          Chat messages in the eliminated-players channel. Visible to the Narrator and eliminated players only.
+        </ResponseField>
+        <ResponseField name="mafiaMessages" type="array">
+          Private Mafia team chat. Visible to the Narrator and active (non-eliminated) Mafia players during the night phase only.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomId, roomCode, or clientId` | One or more required body fields are absent or empty. |
+| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
+| `404` | `Room not found` | No room matches the provided `roomId` + `roomCode` pair. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `500` | `Failed to load players` / `Failed to update heartbeat` | Supabase database error. |
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/state', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+  })
+});
+const { data } = await response.json();
+
+console.log(data.status);         // 'waiting' | 'started' | 'finished'
+console.log(data.players);        // filtered player list
+console.log(data.roundState);     // null or RoundState filtered by role
+```
+
+<Note>
+  The frontend polls this endpoint every 2 seconds. The server updates `last_seen` on each successful call. Players whose `last_seen` is older than 20 minutes are removed by the `/api/rooms/cleanup` cron job.
+</Note>
+
+<Info>
+  Role visibility is enforced server-side. A Mafia player will see the `role` field populated as `"Mafia"` for all of their Mafia teammates, but will see `undefined` for Villagers, the Doctor, and the Detective. Only the Narrator has full visibility into all roles and round events.
+</Info>

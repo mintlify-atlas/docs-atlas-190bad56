@@ -1,0 +1,120 @@
+---
+title: "Local Development Setup for Mafia Night Game"
+sidebarTitle: "Local Development"
+description: "Step-by-step guide to setting up a local Mafia Night Game development environment, including Supabase, environment variables, and available npm scripts."
+---
+
+This page walks through everything needed to run Mafia Night Game locally for development and contribution. By the end you will have a fully functional dev environment — including the serverless API routes — running on your machine.
+
+## Prerequisites
+
+Make sure the following are available before starting:
+
+- **Node.js 22.12 or later** — required by the `engines` field in `package.json`
+- **npm** — bundled with Node.js
+- **A Supabase project** — a free-tier project at [supabase.com](https://supabase.com) is sufficient
+- **Vercel CLI** — install globally with:
+  ```bash
+  npm install -g vercel
+  ```
+
+<Note>
+  The dev server must be started with `vercel dev`, not `vite` directly. The API routes in `api/` are Vercel serverless functions and only execute under the Vercel runtime. Running `vite` alone starts the frontend but leaves all API calls broken, so role assignment, night actions, voting, and narrator controls will not work.
+</Note>
+
+## Setup
+
+<Steps>
+  <Step title="Fork and clone the repository">
+    Fork the repository on GitHub, then clone your fork locally:
+
+    ```bash
+    git clone https://github.com/<your-username>/mafia.git
+    cd mafia
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Use `npm ci` instead of `npm install` to get a clean, reproducible install that matches the lockfile exactly:
+
+    ```bash
+    npm ci
+    ```
+  </Step>
+
+  <Step title="Set up Supabase">
+    Open the SQL editor in your Supabase project dashboard and run the contents of `supabase/schema.sql`. This creates all required tables with row-level security enabled — the same security model the production deployment relies on.
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example file and fill in your own values:
+
+    ```bash
+    cp .env.example .env.local
+    ```
+
+    The three required variables are:
+
+    | Variable | Description |
+    |---|---|
+    | `SUPABASE_URL` | Server-side Supabase project URL |
+    | `SUPABASE_SERVICE_ROLE_KEY` | Server-only service-role key |
+    | `CRON_SECRET` | Random value of at least 16 characters used by Vercel Cron |
+
+    Never prefix these values with `VITE_` — Vite-prefixed variables are bundled into the browser output and would expose server secrets to the client.
+  </Step>
+
+  <Step title="Start the development server">
+    Start the full dev environment (frontend + API routes) with:
+
+    ```bash
+    npx vercel dev
+    ```
+
+    The application will be available at `http://localhost:3000` (or the port Vercel CLI reports). Both the React frontend and the serverless functions in `api/` will hot-reload as you make changes.
+  </Step>
+</Steps>
+
+## Available scripts
+
+All scripts are defined in `package.json` and run with `npm run <script>`.
+
+| Script | Command | Description |
+|---|---|---|
+| `dev` | `npm run dev` | Starts the Vite dev server only — **no API routes**. Use `vercel dev` for full functionality. |
+| `build` | `npm run build` | Production build with Vite. Run this before opening a PR to confirm the build is clean. |
+| `typecheck` | `npm run typecheck` | Runs `tsc --noEmit` to type-check the entire project without emitting any output files. |
+| `test` | `npm run test` | Runs the Vitest test suite once and exits. |
+| `test:watch` | `npm run test:watch` | Runs Vitest in interactive watch mode — reruns affected tests on file save. |
+| `preview` | `npm run preview` | Serves the last Vite production build locally for manual inspection. |
+
+## Testing
+
+Tests live in the `tests/` directory and use [Vitest](https://vitest.dev). The suite covers game rule logic including win condition evaluation, role normalization (including legacy Serbian role names), and night action resolution (mafia kills, doctor saves, Silencer interactions, and detective inspections).
+
+Run the full suite before submitting a pull request:
+
+```bash
+npm run test
+```
+
+Use watch mode while developing to get immediate feedback as you change files:
+
+```bash
+npm run test:watch
+```
+
+<Tip>
+  The GitHub Actions CI workflow (`.github/workflows/ci.yml`) runs `npm run typecheck`, `npm run test`, and `npm run build` automatically on every pull request and every push to `main`. Running these three commands locally before pushing means you will see any failures before CI does, which shortens the feedback loop.
+</Tip>
+
+## Quality checks
+
+Run both checks before opening a pull request:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+`typecheck` catches type errors across the entire project without producing output files. `build` confirms Vite can bundle a clean production artifact. Both are required to pass in CI before a PR can be merged.

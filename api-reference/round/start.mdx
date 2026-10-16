@@ -1,0 +1,74 @@
+---
+title: "POST /api/rooms/round/start — Begin a Night Round"
+sidebarTitle: "POST /round/start"
+description: "Narrator-only endpoint that increments the round counter, sets the game phase to 'night', clears previous actions and votes, and appends a round_started event to the log."
+---
+
+The narrator calls this endpoint to open a new night round once all players have confirmed their roles. It increments the internal round counter, transitions the game `phase` from `'idle'` to `'night'`, wipes any leftover actions, votes, and Mafia messages from the previous round, and appends a `round_started` entry to the round event log. The endpoint is idempotent against accidental double-calls: if a night round or a voting phase is already active, it returns an appropriate conflict error rather than overwriting live state.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code used to identify the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the caller. Must belong to the narrator of the room; any non-narrator player receives a `403`.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Returned on a successful `200` response.
+
+  <Expandable title="data fields">
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the round was started successfully.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `error` message | Condition |
+|--------|-----------------|-----------|
+| `400` | `Missing roomCode or clientId` | Either field is absent or empty. |
+| `403` | `Player not found` | No player row matches `clientId` in this room. |
+| `403` | `Only the narrator can start a round.` | The caller is not the narrator. |
+| `404` | `Room not found` | No room exists for the given `roomCode`. |
+| `405` | `Method not allowed` | Request method is not `POST`. |
+| `409` | `The round can start after every player confirms their role.` | Room `status` is not `'finished'` (i.e., not all players have confirmed). |
+| `409` | `Role-only mode does not use in-app night rounds.` | `casualMode` is enabled for this room. |
+| `409` | `The game is over. Start a new role assignment.` | A `gameResult` is already set — the game has ended. |
+| `409` | `A night round is already in progress.` | Current phase is already `'night'`. |
+| `409` | `Voting is still in progress.` | Current phase is `'voting'`; voting must complete before a new night round can begin. |
+| `500` | `Failed to start round` | Supabase write failed unexpectedly. |
+
+<Warning>
+  This endpoint requires the room `status` to be `'finished'` in the database. This is the state the room enters after all players have confirmed their assigned roles — it does **not** mean the game is over. The `gameResult` field inside `roundState` is the authoritative indicator of a completed game.
+</Warning>
+
+<Note>
+  Calling this endpoint resets `actions`, `votes`, `lastResult`, `lastVoteSummary`, and `mafiaMessages` to empty/null. Ensure all night-phase data from the previous round has been read by clients before triggering a new round.
+</Note>
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/round/start', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'narrator-client-uuid'
+  })
+});
+
+const { data, error } = await response.json();
+
+if (error) {
+  console.error('Failed to start round:', error);
+} else {
+  console.log('Night round started:', data.ok); // true
+}
+```

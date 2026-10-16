@@ -1,0 +1,131 @@
+---
+title: "POST /api/rooms/join — Create or Join a Room"
+sidebarTitle: "POST /rooms/join"
+description: "Creates a new room with optional settings or joins an existing one by room code. Reconnects a returning player if their clientId is already present."
+---
+
+The `/api/rooms/join` endpoint is the entry point for every player session. When called with a `roomCode` that does not yet exist **and** a `settings` object is provided, it creates the room in `waiting` status and marks the calling player as host. When the room already exists, the player is added as a regular member — unless their `clientId` is already registered, in which case the call acts as a reconnect and updates the player's `name` and `last_seen` timestamp without consuming a slot. The frontend calls this endpoint once on the join/create screen before navigating into the lobby.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  A 6-digit numeric string that identifies the room (e.g. `"123456"`). The value is normalized to uppercase internally, but only digit characters are accepted. Leading zeros are significant.
+</ParamField>
+
+<ParamField body="playerName" type="string" required>
+  The display name shown to other players. Maximum **32 characters**. Whitespace is trimmed before validation.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  A browser-generated UUID that permanently identifies this browser session. Maximum **128 characters**. Stored against the player row and used for all subsequent calls.
+</ParamField>
+
+<ParamField body="settings" type="object" optional>
+  Room configuration used **only** when creating a new room. Ignored when joining an existing room. If the room code does not exist and `settings` is omitted, the request returns `404`.
+
+  <Expandable title="settings fields">
+    <ParamField body="mafiaCount" type="number" optional>
+      Number of Mafia players to assign. Clamped to `1–10`. Defaults to `1`.
+    </ParamField>
+
+    <ParamField body="doctor" type="boolean" optional>
+      Whether a Doctor role is included. Always forced to `true` by the server regardless of the value provided.
+    </ParamField>
+
+    <ParamField body="detective" type="boolean" optional>
+      Whether a Detective role is included. Always forced to `true` by the server regardless of the value provided.
+    </ParamField>
+
+    <ParamField body="lady" type="boolean" optional>
+      Whether the Silencer (Lady) role is included. Defaults to `false`.
+    </ParamField>
+
+    <ParamField body="casualMode" type="boolean" optional>
+      Enables casual / relaxed rule-set. Defaults to `false`.
+    </ParamField>
+
+    <ParamField body="customRoles" type="array" optional>
+      Up to **10** custom role definitions. Duplicate names (case-insensitive) are deduplicated and names are truncated to 24 characters.
+
+      <Expandable title="customRoles item fields">
+        <ParamField body="name" type="string" required>
+          Display name for the custom role. Trimmed and capped at 24 characters.
+        </ParamField>
+        <ParamField body="count" type="number" required>
+          How many players receive this role. Clamped to `1–10`.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Response
+
+A successful request returns HTTP `200` with the following `data` object.
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="roomId" type="string">
+      The UUID of the room that was created or joined. Store this alongside `roomCode` and `clientId` — all three are required by `/api/rooms/state`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomCode, playerName, or clientId` | One or more required body fields are absent or empty. |
+| `400` | `Room code must contain exactly 6 digits` | `roomCode` contained non-digit characters or was not 6 characters after normalization. |
+| `400` | `Player name must be 32 characters or fewer` | `playerName` exceeded the 32-character limit. |
+| `400` | `Invalid client identifier` | `clientId` exceeded 128 characters. |
+| `404` | `Room not found.` | The room code does not exist and no `settings` object was provided. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `409` | `The game has already started.` | The room exists but its status is no longer `waiting`, and the caller is a new player (not a reconnect). |
+| `409` | `This room is full. The maximum is 20 players.` | The room already has 20 players. |
+| `500` | `Failed to load room` / `Failed to create room` / `Failed to create player` / `Failed to update player` / `Failed to load player` / `Failed to check room capacity` | Supabase database error. |
+
+## Example
+
+```javascript
+// Create a new room
+const response = await fetch('/api/rooms/join', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    playerName: 'Alice',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    settings: {
+      mafiaCount: 2,
+      doctor: true,
+      detective: true,
+      lady: false,
+      casualMode: false,
+      customRoles: []
+    }
+  })
+});
+const { data } = await response.json();
+// data.roomId — store this for subsequent /api/rooms/state calls
+console.log(data.roomId);
+```
+
+```javascript
+// Join an existing room
+const response = await fetch('/api/rooms/join', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    playerName: 'Bob',
+    clientId: 'b2c3d4e5-f6a7-8901-bcde-f12345678901'
+  })
+});
+const { data } = await response.json();
+console.log(data.roomId);
+```
+
+<Note>
+  The `clientId` should be generated once per browser (e.g. with `crypto.randomUUID()`) and persisted in `localStorage`. Sending the same `clientId` to a room the player already belongs to performs a reconnect — safe to call on page reload.
+</Note>

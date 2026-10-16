@@ -1,0 +1,109 @@
+{
+  "projectType": "saas",
+  "projectName": "Mafia Night Game",
+  "projectDescription": "An open-source, browser-based real-time implementation of the Mafia party game with rooms, role assignment, night actions, voting, narrator controls, and optional in-game chat — built with React, TypeScript, Vercel serverless functions, and Supabase.",
+  "theme": "almond",
+  "primaryColor": "#dc2626",
+  "lightColor": "#fef2f2",
+  "darkColor": "#7f1d1d",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "How to Play",
+            "pages": [
+              "how-to-play/overview",
+              "how-to-play/roles",
+              "how-to-play/game-flow"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/room-settings",
+              "configuration/environment-variables"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/database-schema",
+              "architecture/security"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/guidelines",
+              "contributing/local-development"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Room Endpoints",
+            "pages": [
+              "api-reference/rooms/join",
+              "api-reference/rooms/state",
+              "api-reference/rooms/settings",
+              "api-reference/rooms/start",
+              "api-reference/rooms/leave",
+              "api-reference/rooms/reset",
+              "api-reference/rooms/cleanup"
+            ]
+          },
+          {
+            "group": "Round Endpoints",
+            "pages": [
+              "api-reference/round/start",
+              "api-reference/round/action",
+              "api-reference/round/resolve",
+              "api-reference/round/vote"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time multiplayer rooms with 6-digit room codes and up to 20 players",
+    "Automatic role assignment: Mafia, Villager, Doctor, Detective, Silencer, and custom roles",
+    "Narrator role with full game-state visibility to guide rounds",
+    "Night action system: kill, heal, investigate, and silence — all server-resolved",
+    "Live voting with automatic tie-breaking and elimination tracking",
+    "Graveyard chat for eliminated players and Mafia team chat during night phases",
+    "Casual (role-only) mode for in-person play with app-assisted role assignment",
+    "Player-specific state projection — clients never receive other players' secret roles",
+    "Row-Level Security on Supabase; service-role key stays server-side only",
+    "Session persistence via localStorage with automatic rejoin on page reload",
+    "Automated room cleanup via Vercel Cron at 03:00 UTC daily"
+  ],
+  "publicApiSurface": [
+    "POST /api/rooms/join",
+    "POST /api/rooms/state",
+    "POST /api/rooms/settings",
+    "POST /api/rooms/start",
+    "POST /api/rooms/confirm",
+    "POST /api/rooms/leave",
+    "POST /api/rooms/reset",
+    "POST /api/rooms/round/start",
+    "POST /api/rooms/round/action",
+    "POST /api/rooms/round/resolve",
+    "POST /api/rooms/round/vote",
+    "GET  /api/rooms/cleanup (Vercel Cron)"
+  ]
+}

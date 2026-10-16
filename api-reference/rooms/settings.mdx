@@ -1,0 +1,112 @@
+---
+title: "POST /api/rooms/settings — Update Room Settings"
+sidebarTitle: "POST /rooms/settings"
+description: "Updates the game configuration for a waiting room. Only the host may call this endpoint, and only before the game has started. Returns ok: true on success."
+---
+
+The `/api/rooms/settings` endpoint allows the room host to adjust game configuration after the room has been created but before the game starts. It replaces the stored `settings` object with a sanitized version of the provided input. The endpoint enforces two authorization checks: the calling player must exist in the room (identified by `clientId`) and must hold the host flag. Attempting to update settings on a room that has already moved to `started` or `finished` status returns a `409` conflict error.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code identifying the room to update.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID of the requesting player. Must belong to the room's host.
+</ParamField>
+
+<ParamField body="settings" type="object" required>
+  The full replacement settings object. All fields are sanitized server-side — values outside valid ranges are clamped to defaults.
+
+  <Expandable title="settings fields" defaultOpen>
+    <ParamField body="mafiaCount" type="number" required>
+      Number of Mafia roles to assign when the game starts. Clamped to `1–10`. Defaults to `1` if invalid.
+    </ParamField>
+
+    <ParamField body="doctor" type="boolean" required>
+      Whether to include the Doctor role. The server always forces this to `true` regardless of the submitted value.
+    </ParamField>
+
+    <ParamField body="detective" type="boolean" required>
+      Whether to include the Detective role. The server always forces this to `true` regardless of the submitted value.
+    </ParamField>
+
+    <ParamField body="lady" type="boolean" required>
+      Whether to include the Silencer (Lady) role. `false` by default.
+    </ParamField>
+
+    <ParamField body="casualMode" type="boolean" required>
+      Whether casual / relaxed rules are active. `false` by default.
+    </ParamField>
+
+    <ParamField body="customRoles" type="array" required>
+      Custom role definitions. Up to **10** unique roles (case-insensitive deduplication). Names are trimmed and capped at 24 characters. Counts are clamped to `1–10`.
+
+      <Expandable title="customRoles item fields">
+        <ParamField body="name" type="string" required>
+          Display name for the custom role.
+        </ParamField>
+        <ParamField body="count" type="number" required>
+          Number of players to assign this role.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` on a successful update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomCode, clientId, or settings` | One or more required body fields are absent or empty. |
+| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
+| `403` | `Only host can update settings` | The calling player exists but does not hold the host flag. |
+| `404` | `Room not found` | No room matches the provided `roomCode`. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `409` | `Room already started` | The room's status is no longer `waiting`. |
+| `500` | `Failed to update settings` | Supabase database error while persisting the new settings. |
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/settings', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    settings: {
+      mafiaCount: 3,
+      doctor: true,
+      detective: true,
+      lady: true,
+      casualMode: false,
+      customRoles: [
+        { name: 'Vigilante', count: 1 }
+      ]
+    }
+  })
+});
+const { data } = await response.json();
+// data.ok === true
+console.log(data.ok);
+```
+
+<Warning>
+  `doctor` and `detective` are always set to `true` by the server regardless of the values you provide. There is no way to disable these roles via the settings endpoint.
+</Warning>
+
+<Note>
+  Settings changes are picked up immediately by all polling players on their next `/api/rooms/state` call, since the response includes the sanitized `settings` object.
+</Note>

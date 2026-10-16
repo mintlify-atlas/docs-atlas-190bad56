@@ -1,0 +1,70 @@
+---
+title: "Mafia Night Game: Self-Host the Classic Party Game"
+sidebarTitle: "Introduction"
+description: "Mafia Night Game is an open-source, real-time Mafia party game you self-host on Vercel and Supabase — no install needed, just share a 6-digit room code."
+---
+
+Mafia Night Game is a fully open-source, real-time implementation of the classic Mafia party game that runs entirely in the browser. Players join a room with a 6-digit code on any device — no download, no account, no app store. You self-host it on your own Vercel project and Supabase database, keeping full control over your data. Whether you want to run a game night with friends or embed Mafia into an event platform, this project gives you a production-ready starting point with built-in security, role logic, and narrator tooling.
+
+## Tech stack
+
+Mafia Night Game is built on four focused layers that work together cleanly:
+
+- **Frontend** — React 19 with TypeScript, bundled by Vite 6. All UI state lives in React; there is no separate state-management library.
+- **API layer** — Vercel serverless functions under `api/`. Every game action (join, start, night action, vote) is a short-lived function that the browser calls over plain `fetch`.
+- **Database** — Supabase PostgreSQL. Row-Level Security is enabled on every table so that raw database credentials never need to reach the browser.
+- **Build tooling** — TypeScript 5.8, Vitest for unit tests, Tailwind CSS 3 for styling.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="6-Digit Room Codes" icon="door-open">
+    The host creates a room and shares a short numeric code. Anyone with the code can join from any browser — no account required. Each room holds up to 20 players.
+  </Card>
+  <Card title="Built-In Roles" icon="masks-theater">
+    Five core roles ship out of the box: **Mafia** (eliminate townspeople), **Villager** (vote out Mafia), **Doctor** (protect a player each night), **Detective** (investigate a player each night), and **Silencer** (block a player's night action).
+  </Card>
+  <Card title="Custom Roles" icon="wand-magic-sparkles">
+    The host can define additional custom roles with a name and player count alongside the standard roles. Custom roles appear on the role-reveal screen with a default description.
+  </Card>
+  <Card title="Narrator Mode" icon="microphone">
+    One player can take the Narrator role. The narrator sees the full game state — every player's role and all round events — but does not participate in votes or night actions.
+  </Card>
+  <Card title="Night Actions & Voting" icon="moon">
+    Each round moves through a night phase (Mafia, Doctor, Detective, and Silencer each submit their action) and a day voting phase. The server resolves actions and records events in the round log.
+  </Card>
+  <Card title="Graveyard & Mafia Chat" icon="comments">
+    Eliminated players can communicate in a separate graveyard channel. Mafia members share a private team chat throughout the game for coordination.
+  </Card>
+  <Card title="Casual Mode" icon="face-smile">
+    Enable casual mode in room settings to relax the strict role-reveal flow, making the game friendlier for first-time players or smaller groups.
+  </Card>
+  <Card title="Session Persistence" icon="rotate">
+    Each browser generates a random client identifier stored in `localStorage`. If a player closes and reopens their tab, they re-join their existing player slot automatically.
+  </Card>
+</CardGroup>
+
+## Security model
+
+The service-role key — the credential that bypasses Supabase RLS — lives exclusively in Vercel's serverless environment and is never sent to the browser. All Supabase tables enforce Row-Level Security with no direct browser-read policy; the only way a client reads game state is through the `/api/rooms/state` endpoint, which returns a **player-specific projection**: a player sees their own role, Mafia members can see their teammates, and the narrator sees the full state. The cleanup cron endpoint at `/api/rooms/cleanup` requires a `CRON_SECRET` Bearer token. Room creation and join requests are rate-limited at the hosting layer, and each room is capped at **20 players**.
+
+<Note>
+  Running Mafia Night Game requires **Node.js 22.12 or later**, a **Supabase project** (free tier works), and the **Vercel CLI** for local development. A Vercel account is needed for production deployment.
+</Note>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run the game locally in under five minutes with `npx vercel dev`.
+  </Card>
+  <Card title="Deployment" icon="cloud-arrow-up" href="/deployment">
+    Push to production on Vercel with environment variable configuration and cron setup.
+  </Card>
+  <Card title="How to Play" icon="book-open" href="/how-to-play/overview">
+    A player-facing guide covering roles, phases, and win conditions.
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+    A deep-dive into the API routes, database schema, and state projection model.
+  </Card>
+</CardGroup>

@@ -1,47 +1,89 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Run Mafia Night Game Locally via the Vercel Dev CLI"
+sidebarTitle: "Quickstart"
+description: "Clone the repo, wire up Supabase, and have a fully working Mafia game running locally in minutes using npx vercel dev and three environment variables."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through running Mafia Night Game on your local machine from a fresh clone to an open browser tab. You will create a Supabase project, configure three environment variables, and start the development server. By the end you will have a working room that other players on your local network — or via a tunnel — can join with a 6-digit code.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Create a Supabase project and run the schema">
+    Go to [supabase.com](https://supabase.com) and create a new project. Once the project is ready, open the **SQL Editor** in the Supabase dashboard and paste the entire contents of `supabase/schema.sql` from the repository, then click **Run**. This creates all tables, indexes, and Row-Level Security policies the game depends on.
 
-    ```bash
-    npm install your-package
-    ```
+    <Note>
+      The free Supabase tier is sufficient for development and small game nights. You do not need to enable any Supabase Realtime channels — the game polls the state endpoint directly.
+    </Note>
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Clone the repository and install dependencies">
+    Clone the repository and install exact dependency versions with `npm ci`:
 
     ```bash
-    your-cli init
+    git clone https://github.com/RexDotDev/mafia.git
+    cd mafia
+    npm ci
     ```
+
+    `npm ci` (instead of `npm install`) ensures your local node\_modules match the lockfile exactly, which is important for TypeScript version consistency.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Configure environment variables">
+    Copy the example environment file to `.env.local`:
 
     ```bash
-    your-cli start
+    cp .env.example .env.local
     ```
+
+    Then open `.env.local` and fill in your three values:
+
+    ```bash
+    SUPABASE_URL=https://<your-project-ref>.supabase.co
+    SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+    CRON_SECRET=<random-string-of-at-least-16-characters>
+    ```
+
+    Find `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in your Supabase dashboard under **Project Settings → API**. Use the **service\_role** key (not the `anon` key) — it is required for the serverless functions to bypass RLS when writing game state. Generate `CRON_SECRET` with any password manager or `openssl rand -hex 16`.
+
+    <Warning>
+      Never prefix any of these variables with `VITE_`. Vite bundles every `VITE_`-prefixed variable directly into the browser JavaScript — your service-role key would be visible to anyone who inspects the page source. All three variables must remain unprefixed so they stay server-side only.
+    </Warning>
+  </Step>
+
+  <Step title="Start the development server">
+    Start the app with the Vercel CLI, not plain Vite:
+
+    ```bash
+    npx vercel dev
+    ```
+
+    Running `npm run dev` (which calls `vite`) would serve only the frontend — the serverless API routes under `api/` would return 404 errors and the game would not function. `vercel dev` emulates the full Vercel runtime locally, wiring both the Vite dev server and the serverless functions together on a single port.
+
+    The CLI will prompt you to link a Vercel project the first time. You can create a new one or skip linking by pressing Enter through the prompts — `.env.local` is read regardless of project linkage.
+  </Step>
+
+  <Step title="Create a room and share the code">
+    Open [http://localhost:3000](http://localhost:3000) (or the port shown by `vercel dev`) in your browser. Enter a name, click **Create Room**, and a 6-digit code will appear in the lobby. Share that code with other players — they enter it on the same URL and are placed in the same room instantly.
+
+    The host configures roles and player count in the lobby settings, then clicks **Start Game** to move everyone to the role-reveal screen.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## What happens next
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+Once the host starts the game, the round loop begins:
+
+1. **Role reveal** — each player taps their card to see their assigned role (Mafia, Villager, Doctor, Detective, Silencer, or a custom role) and confirms they have read it.
+2. **Night phase** — role-holders submit their night actions: Mafia picks a kill target, Doctor picks a player to protect, Detective investigates a player, Silencer blocks a player's action.
+3. **Round resolution** — the server resolves all actions simultaneously, records the outcome in the event log, and the narrator announces the result.
+4. **Voting phase** — surviving players discuss and vote to eliminate a suspect. The player with the most votes is removed.
+5. **Game end** — the loop repeats until the city eliminates all Mafia members (city wins) or the Mafia equals or outnumbers the town (Mafia wins).
+
+<Tip>
+  Before pushing any changes, run the full quality-check suite to catch type errors and build issues early:
+
+  ```bash
+  npm run typecheck && npm run build
+  ```
+
+  `typecheck` runs `tsc --noEmit` across the entire project. `build` calls `vite build` and will surface any module-resolution or bundling problems that TypeScript alone might miss.
 </Tip>

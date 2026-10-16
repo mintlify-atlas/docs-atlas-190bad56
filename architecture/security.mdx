@@ -1,0 +1,132 @@
+---
+title: "Mafia Night Game: Security Model and Access Control"
+sidebarTitle: "Security"
+description: "How Mafia Night Game keeps secrets server-side, enforces Row-Level Security, projects only authorized state to each player, and validates every input."
+---
+
+Mafia Night Game is designed on a simple principle: secrets stay on the server and clients receive only what they are authorised to see. The Supabase service-role key never leaves the serverless runtime, the browser is identified by a random UUID rather than a real credential, and every API response is a filtered projection tailored to the requesting player's role and status.
+
+## Credential Isolation
+
+<CardGroup cols={2}>
+  <Card title="Service-role key stays server-side" icon="key">
+    `SUPABASE_SERVICE_ROLE_KEY` is read only inside the Vercel serverless functions. It is never referenced in any Vite-bundled source file and is never prefixed with `VITE_`, which would cause Vite to embed it in the browser bundle.
+  </Card>
+  <Card title="No browser secrets" icon="eye-slash">
+    The browser holds only a random UUID (`mafia_client_id`) that it generated itself. This identifier is not a signed token and cannot be used to access Supabase directly. It is simply a lookup key the server uses to find the correct player record.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Never prefix a server secret with `VITE_`. Any environment variable whose name starts with `VITE_` is inlined into the client bundle at build time and becomes visible to anyone who inspects the deployed JavaScript.
+</Warning>
+
+## Row-Level Security
+
+Both the `rooms` and `players` tables have Row-Level Security enabled in Supabase. Instead of writing permissive policies, the schema takes the more restrictive approach of revoking all permissions from the built-in roles:
+
+```sql
+alter table public.rooms enable row level security;
+alter table public.players enable row level security;
+
+revoke all on table public.rooms from anon, authenticated;
+revoke all on table public.players from anon, authenticated;
+```
+
+This means that even a browser possessing the Supabase public anon key cannot execute a single query against either table. All reads and writes go exclusively through the `supabaseAdmin` client inside the serverless functions, which authenticates with the service-role key and therefore bypasses RLS entirely — by design, since the server is trusted.
+
+## Player-Specific State Projection
+
+The most sensitive endpoint is `POST /api/rooms/state`. After authenticating the caller, it constructs a response tailored to that exact player rather than returning the raw database row. The projection rules, taken directly from `api/rooms/state.ts`, are:
+
+<Steps>
+  <Step title="Role visibility">
+    A player can see a role only if at least one of the following is true:
+
+    - They **are** the narrator (`isNarrator === true`)
+    - The role belongs to **their own** player record
+    - The requesting player **is Mafia** and the target player **is also Mafia**
+
+    Everyone else's role is stripped from the response (`role: undefined`).
+  </Step>
+  <Step title="Round events">
+    The `events` array (the full narrator log of what happened each round) is returned only to the narrator. All other players receive an empty array.
+  </Step>
+  <Step title="Night actions and votes">
+    Non-narrator players see only their own submitted action and their own vote. The narrator sees every player's action and vote.
+  </Step>
+  <Step title="Last result">
+    The `lastResult` object (which reveals who the Mafia targeted, whether the Doctor saved someone, and the Detective's findings) is returned only to the narrator. All other players receive `null`.
+  </Step>
+  <Step title="Graveyard messages">
+    The `graveyardMessages` channel is visible to the **narrator** and to any player who has been **eliminated**. Active players cannot see graveyard chat.
+  </Step>
+  <Step title="Mafia messages">
+    The `mafiaMessages` channel is visible to the **narrator** and to any **active (non-eliminated) Mafia player** while the round phase is `'night'`. Once the night ends, or if the player is eliminated, the channel becomes invisible.
+  </Step>
+  <Step title="Client ID">
+    The `clientId` field is returned only for the requesting player's own record. Every other player's record has `clientId` set to an empty string, preventing any client from mapping another player's browser identity.
+  </Step>
+</Steps>
+
+## Input Validation
+
+Every API handler sanitises its inputs before touching the database. The rules enforced across handlers are:
+
+| Field | Rule |
+|-------|------|
+| `roomCode` | Trimmed, uppercased, and must match `/^\d{6}$/` — exactly 6 numeric digits |
+| `playerName` | Maximum 32 characters; validated by `join.ts` before insert |
+| `clientId` | Maximum 128 characters; longer values are rejected with a 400 error |
+| `mafiaCount` | Clamped to the range `[1, 10]` by `sanitizeSettings()` |
+| `customRoles` | Deduplicated by lowercase name; names truncated to 24 characters; maximum 10 custom roles; per-role count clamped to `[1, 10]` |
+| Room capacity | Enforced at join time: `MAX_PLAYERS_PER_ROOM = 20` |
+
+The `sanitizeSettings()` function in `server/roomUtils.ts` is the canonical sanitiser called by both the join handler (when creating a room) and the settings handler (when the host changes configuration). It always returns a structurally valid settings object regardless of what was passed in.
+
+## HTTP Security Headers
+
+`vercel.json` applies the following headers to every response served by the deployment, including both the static SPA and the serverless API routes:
+
+| Header | Value |
+|--------|-------|
+| `Content-Security-Policy` | See below |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+
+The full Content Security Policy value:
+
+```text
+default-src 'self';
+script-src 'self' 'unsafe-inline';
+style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com;
+font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com;
+img-src 'self' data:;
+connect-src 'self';
+object-src 'none';
+base-uri 'self';
+frame-ancestors 'none';
+form-action 'self'
+```
+
+`frame-ancestors 'none'` reinforces `X-Frame-Options: DENY` and prevents the application from being embedded in a frame or iframe on any other origin. `object-src 'none'` disables Flash and other plugins. `connect-src 'self'` restricts all `fetch` and XHR calls to the same origin, ensuring the browser cannot be redirected to exfiltrate data to a third-party endpoint.
+
+## Cron Endpoint Protection
+
+The cleanup cron job (`GET /api/rooms/cleanup`) must not be triggerable by arbitrary HTTP requests, since it deletes database rows. The handler requires a bearer token:
+
+```http
+Authorization: Bearer {CRON_SECRET}
+```
+
+When Vercel invokes the cron on its schedule, it automatically attaches this header using the `CRON_SECRET` environment variable you set in the Vercel project dashboard. Any request without the correct bearer token is rejected before any database operation is attempted.
+
+<Warning>
+  Room codes are 6-digit numeric strings and should be treated as **invitations**, not secrets. They are short, guessable, and visible to everyone in the room. Do not reuse room codes for authentication or to gate access to sensitive operations outside the game.
+</Warning>
+
+<Tip>
+  If a credential (`SUPABASE_SERVICE_ROLE_KEY` or `CRON_SECRET`) is ever accidentally exposed — for example, committed to a public repository or logged — rotate it immediately at the provider (Supabase dashboard or Vercel environment variables) before redeploying. Changing the value in Vercel does not invalidate the old secret at Supabase, so both systems must be updated.
+</Tip>

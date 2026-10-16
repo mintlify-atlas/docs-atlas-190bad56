@@ -1,0 +1,141 @@
+---
+title: "Mafia Night Game: Environment Variables Full Reference"
+sidebarTitle: "Environment Variables"
+description: "Reference for the three required server-side secrets — SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and CRON_SECRET — and how to configure them safely."
+---
+
+Mafia Night Game requires exactly three environment variables, and all three must remain **server-side secrets**. They are consumed exclusively by the Vercel serverless functions under `api/` — the browser client never reads them directly. Because the project uses Vite for the frontend build, any variable prefixed with `VITE_` is automatically embedded in the browser bundle. All three variables intentionally omit that prefix, keeping them out of client-side code entirely.
+
+## Variables
+
+<ParamField query="SUPABASE_URL" type="string" required>
+  The base URL of your Supabase project. Found in the Supabase dashboard under
+  **Project Settings → API → Project URL**. Every serverless route imports
+  `supabaseAdmin` from `server/supabase.ts`, which reads this value to
+  initialize the Supabase client.
+
+  **Example:** `https://xyzabcdef.supabase.co`
+
+  This value is not a secret on its own, but it is kept server-side alongside
+  the service-role key so that neither value needs to be handled differently in
+  code.
+</ParamField>
+
+<ParamField query="SUPABASE_SERVICE_ROLE_KEY" type="string" required>
+  The service-role (admin) key from your Supabase project. Found in the
+  Supabase dashboard under **Project Settings → API → Project API Keys →
+  service_role**. All serverless routes use this key — it grants full database
+  access and bypasses Row-Level Security entirely.
+
+  Never prefix this variable with `VITE_`. Never pass it to any client-side
+  code, log it, or include it in API responses.
+</ParamField>
+
+<ParamField query="CRON_SECRET" type="string" required>
+  A random secret string of **at least 16 characters**. Vercel passes this
+  value as a `Bearer` token in the `Authorization` header when it invokes the
+  `GET /api/rooms/cleanup` cron job, which runs daily at **03:00 UTC**
+  (defined in `vercel.json` as `"schedule": "0 3 * * *"`). The handler
+  validates the token before performing any cleanup work.
+
+  Generate a secure value with:
+
+  ```bash
+  openssl rand -hex 32
+  ```
+
+  This produces a 64-character hex string well above the 16-character minimum.
+  Rotate this value immediately if it is ever exposed.
+</ParamField>
+
+<Warning>
+  `SUPABASE_SERVICE_ROLE_KEY` bypasses all Row-Level Security policies on your
+  Supabase database. If this key is exposed in client code or a public
+  repository, an attacker gains unrestricted read and write access to every
+  table. Rotate the key in the Supabase dashboard immediately if exposure is
+  suspected, and redeploy before the old key is used again.
+</Warning>
+
+## Local `.env.local` file
+
+Copy `.env.example` to `.env.local` at the repository root and fill in your
+own values. The file structure from `.env.example` is:
+
+```bash
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+CRON_SECRET=
+```
+
+A complete `.env.local` looks like this:
+
+```bash
+SUPABASE_URL=https://xyzabcdef.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+CRON_SECRET=a3f8c2e1b7d94f0e6a2c5b8d1e4f7a0c3b6e9d2f5a8c1b4e7d0f3a6c9b2e5d8
+```
+
+<Note>
+  The browser client uses **no environment variables directly**. The React
+  frontend communicates exclusively with the `/api/*` serverless routes, which
+  hold all secrets in their server-side execution context. This means there is
+  no `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` — the standard Supabase
+  client-side setup is intentionally absent from this project.
+</Note>
+
+## The VITE\_ prefix rule
+
+Vite's build pipeline scans your environment at build time and statically
+replaces any reference to `import.meta.env.VITE_*` in the output bundle. Any
+variable whose name starts with `VITE_` becomes publicly readable by anyone
+who loads your site.
+
+The three variables above **must not** carry this prefix:
+
+| Variable | Safe name | Unsafe name |
+|---|---|---|
+| Supabase project URL | `SUPABASE_URL` | ~~`VITE_SUPABASE_URL`~~ |
+| Supabase service-role key | `SUPABASE_SERVICE_ROLE_KEY` | ~~`VITE_SUPABASE_SERVICE_ROLE_KEY`~~ |
+| Cron authentication secret | `CRON_SECRET` | ~~`VITE_CRON_SECRET`~~ |
+
+## Setting variables in Vercel
+
+<Steps>
+  <Step title="Open your project in the Vercel dashboard">
+    Navigate to [vercel.com/dashboard](https://vercel.com/dashboard) and select
+    your Mafia Night Game project.
+  </Step>
+  <Step title="Go to Environment Variables">
+    Click **Settings** in the top navigation, then select **Environment
+    Variables** from the left sidebar.
+  </Step>
+  <Step title="Add each variable">
+    For each of the three variables — `SUPABASE_URL`,
+    `SUPABASE_SERVICE_ROLE_KEY`, and `CRON_SECRET` — click **Add**, enter the
+    variable name and its value, and choose the target environments
+    (**Production**, **Preview**, and **Development** as appropriate).
+  </Step>
+  <Step title="Redeploy">
+    Vercel does not automatically redeploy when environment variables change.
+    Trigger a new deployment from the **Deployments** tab to make the updated
+    values live.
+  </Step>
+</Steps>
+
+## Generating CRON\_SECRET
+
+Use `openssl` to create a cryptographically random secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Alternatively, use Node.js:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Both commands produce a 64-character hexadecimal string. Paste the output
+directly as the value of `CRON_SECRET` — do not wrap it in quotes when adding
+it to Vercel's environment variable form.

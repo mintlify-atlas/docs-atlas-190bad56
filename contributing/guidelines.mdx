@@ -1,0 +1,51 @@
+---
+title: "Contributing to Mafia Night Game"
+sidebarTitle: "Guidelines"
+description: "How to contribute to Mafia Night Game: pull request process, security requirements for new API routes, and how to report vulnerabilities privately."
+---
+
+Mafia Night Game is MIT-licensed and welcomes contributions from the community. The best ways to get involved are opening issues to discuss ideas or bugs, and submitting pull requests with focused, well-described changes.
+
+## Before you start
+
+Opening a discussion before writing code saves everyone time — especially for larger changes.
+
+- **Open an issue first** before starting any substantial behavior change or data-model modification. This lets maintainers weigh in on the approach before work is invested.
+- **Read the existing code** to understand the patterns already in use. Consistency across the codebase makes reviews faster and the project easier to maintain long-term.
+
+## Pull request process
+
+Follow these steps for every contribution:
+
+1. **Fork the repository** and create a focused branch for your change. One concern per branch makes reviews cleaner and reverts simpler if needed.
+2. **Verify the build passes** locally before opening the PR:
+   ```bash
+   npm ci
+   npm run typecheck
+   npm run build
+   ```
+3. **Open a pull request** that describes three things: the behavior change being made, any security impact the change has, and the validation you performed (manual testing, test cases added, etc.).
+
+## Security requirements for contributions
+
+All contributions that touch API routes or data access must follow the project's security model:
+
+- **Authenticate every request.** New API routes must verify the identity of the requesting player or confirm a valid cron invocation (via Vercel's `CRON_SECRET` bearer token) before processing anything.
+- **Return player-specific projections only.** Each caller should receive only the data they are authorized to see — a player sees their own role, Mafia teammates see one another, and the narrator sees the full game state. Never return full game state to an unauthenticated or unauthorized caller.
+- **Never commit sensitive data.** Real environment files, credentials, production database exports, room data, player data, and personal information must never appear in commits or pull requests.
+
+<Warning>
+  Never commit `.env` files, real Supabase exports, or any room or player data to the repository. If a secret is accidentally exposed, revoke or rotate it at the provider immediately — removing it from the latest commit is **not** sufficient because Git history retains old blobs.
+</Warning>
+
+## Reporting vulnerabilities
+
+Security vulnerabilities require a different process from regular bugs.
+
+- **Do not open a public issue** for any security vulnerability. A public issue immediately exposes the flaw to everyone before a fix is available.
+- Report vulnerabilities **privately** using the repository's **Security** tab: choose **Report a vulnerability** to open a private GitHub security advisory. This is described in full in [SECURITY.md](https://github.com/RexDotDev/mafia/blob/main/SECURITY.md).
+- Do not include real credentials or personal data in a vulnerability report. If a secret is exposed, revoke or rotate it at the provider first.
+
+<Note>
+  This project follows a Code of Conduct that asks all participants to be respectful, constructive, and focused on the project. Harassment, discrimination, threats, doxxing, and publication of another person's private information are not acceptable. Read the full expectations in [CODE_OF_CONDUCT.md](https://github.com/RexDotDev/mafia/blob/main/CODE_OF_CONDUCT.md).
+</Note>

@@ -1,0 +1,94 @@
+---
+title: "Roles in Mafia Night Game Explained"
+sidebarTitle: "Roles"
+description: "A complete breakdown of every built-in and custom role in Mafia Night Game, including night actions, visibility rules, and special interactions."
+---
+
+Mafia Night Game ships with **six built-in roles** — Mafia, Villager, Doctor, Detective, Silencer, and Narrator — plus an optional system for host-defined custom roles. Each role carries a unique objective, a night action type (or none), and a specific set of visibility privileges that shape how the game is played.
+
+## Built-In Roles
+
+<CardGroup cols={2}>
+  <Card title="Mafia" icon="user-secret">
+    **Eliminate the townspeople without being discovered. Choose one target with your team each night.**
+
+    Mafia members know each other's identities from the moment roles are revealed. Each night, Mafia players coordinate through a private in-app chat and each submit a `mafia_kill` action pointing to their chosen target. The server resolves a final target based on the most-voted pick (latest submission breaks ties). If no Mafia member's action survives Silencer interference, no kill is made that night.
+  </Card>
+  <Card title="Villager" icon="users">
+    **Identify and vote out every Mafia member before they take control of the town.**
+
+    Villagers have no night action. During the night phase they see a waiting screen ("The Town Sleeps") and rely entirely on daytime deduction and the voting phase to influence the game. They are the most common role and form the majority of the town.
+  </Card>
+  <Card title="Doctor" icon="stethoscope">
+    **Choose one player, including yourself, to protect from the Mafia each night.**
+
+    The Doctor submits a `doctor_heal` action each night. If the Mafia's chosen kill target matches the Doctor's protection target, the kill is prevented and that player survives. The Doctor can protect themselves. If the Doctor is silenced by the Silencer, their protection action is blocked for that round.
+  </Card>
+  <Card title="Detective" icon="magnifying-glass">
+    **Investigate one player each night to learn whether they belong to the Mafia.**
+
+    The Detective submits a `detective_check` action each night. After the Narrator resolves the night, the Detective is shown whether their target is Mafia or not. If the Detective is silenced, their check is blocked. There is one important caveat: **investigating the Silencer always returns "not Mafia"**, regardless of any other factors (see the Silencer interaction note below).
+  </Card>
+  <Card title="Silencer" icon="chess-queen">
+    **Silence one player each night and block their night action for that round.**
+
+    The Silencer (internally named `Lady`) submits a `lady_silence` action each night. The Silencer's action is processed **first** during night resolution, before all other roles. Any player who is silenced cannot have their night action take effect that round — their `doctor_heal`, `detective_check`, or `mafia_kill` action is discarded. The Silencer role is **disabled by default** and must be enabled by the host in the lobby settings.
+  </Card>
+  <Card title="Narrator" icon="microphone">
+    **Guide the game, see every role, and manage rounds without taking part in votes.**
+
+    One player is randomly assigned the Narrator role when the host starts the game. The Narrator accesses the Game Director Console, sees a full player-roles dossier (all roles, live), and controls round transitions: they trigger the night phase and call the resolve. The Narrator never submits night actions, never votes, and can never be eliminated.
+  </Card>
+</CardGroup>
+
+## Night Action Types
+
+Each role that takes a night action uses a typed action submitted to the server:
+
+| Role       | Action Type        | Effect                                     |
+|------------|--------------------|--------------------------------------------|
+| Mafia      | `mafia_kill`       | Eliminates the targeted player             |
+| Doctor     | `doctor_heal`      | Protects the targeted player from the kill |
+| Detective  | `detective_check`  | Reveals whether the target is Mafia        |
+| Silencer   | `lady_silence`     | Blocks the targeted player's night action  |
+| Villager   | *(none)*           | No night action                            |
+| Narrator   | *(none)*           | Controls round flow, no target             |
+
+## Role Visibility Rules
+
+What each player can see about other players' roles depends entirely on their assignment:
+
+| Role       | Can See                                    |
+|------------|--------------------------------------------|
+| Narrator   | Every player's role (full dossier)         |
+| Mafia      | Each other (all other Mafia members)       |
+| Doctor     | Only their own role                        |
+| Detective  | Only their own role                        |
+| Silencer   | Only their own role                        |
+| Villager   | Only their own role                        |
+| Custom     | Only their own role                        |
+
+The Narrator's view is labeled **"Narrator Eyes Only"** in the UI and is never exposed to other players.
+
+## Silencer Interactions
+
+<Tip>
+  The Silencer's block is processed **before** every other night action. This means:
+
+  - A **silenced Doctor** cannot protect anyone that night — the Mafia kill proceeds unimpeded.
+  - A **silenced Detective** receives no investigation result that night.
+  - A **silenced Mafia member** has their individual kill vote discarded. If *all* Mafia members are silenced, no kill is made.
+  - If the **Silencer is themselves silenced** (a Mafia member happens to submit a `lady_silence` action targeting the Silencer, which is not possible since only the Silencer role uses that action type — but if a second Silencer existed via custom roles), their block would also be voided. In standard play, only one Silencer exists and the Silencer cannot silence themselves.
+  - **Investigating the Silencer as Detective always returns "not Mafia"**, even though the Silencer is a town role. This is a deliberate server-side rule in the night resolution logic.
+</Tip>
+
+## Custom Roles
+
+The host can add custom roles in the lobby settings. Each custom role requires:
+
+- A **name** — up to 24 characters, trimmed of whitespace. Names are deduplicated (case-insensitive).
+- A **count** — how many players receive this role, between 1 and 10.
+
+Custom roles are displayed in the app with a generic tag icon and carry the default description: *"A custom role chosen by the host."* They have no built-in night action — custom roles are purely informational assignments intended for hosts who want to layer in house rules or themed flavour roles.
+
+A room can have a maximum of **10 distinct custom roles**. Custom role slots are filled first from the special roles list, then custom roles, before any remaining players are assigned Villager.

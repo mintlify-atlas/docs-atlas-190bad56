@@ -1,0 +1,123 @@
+---
+title: "Game Phases and Round Flow in Mafia"
+sidebarTitle: "Game Flow"
+description: "A technical walkthrough of every game phase, round lifecycle, night action resolution order, voting tallying, and win condition logic in Mafia Night Game."
+---
+
+Every Mafia Night Game session moves through a defined set of phases — from players joining the room all the way to a final winner being declared. Understanding the full round lifecycle helps players know what to expect at each step and helps hosts run games smoothly.
+
+## Game Phases
+
+Before a round ever starts, the app tracks where each player is in the session setup using the `GamePhase` enum:
+
+| Phase                | Description                                                                                   |
+|----------------------|-----------------------------------------------------------------------------------------------|
+| `JOIN`               | The entry screen — players have not yet joined a room.                                        |
+| `LOBBY`              | Players are in the room waiting for the host to start. Settings can be adjusted here.         |
+| `REVEAL`             | The game has started; this player needs to tap and confirm their secret role.                 |
+| `WAITING_FOR_OTHERS` | This player has confirmed their role; waiting for all other players to confirm.               |
+| `READY_TO_PLAY`      | All players have confirmed. The game is active and rounds can begin.                          |
+
+The Narrator bypasses `REVEAL` and `WAITING_FOR_OTHERS` — they are automatically marked as confirmed when the game starts.
+
+## Round Phases
+
+Once the game is active (`READY_TO_PLAY`), each round cycles through three `RoundPhase` states:
+
+- **`idle`** — Between rounds. The Narrator's control panel shows the "Initiate Night Phase" button.
+- **`night`** — Active night. Special roles submit their actions. The Narrator can see live intel as actions arrive.
+- **`voting`** — Active day vote. All alive non-Narrator players cast one vote each.
+
+## Full Round Walkthrough
+
+<Steps>
+  <Step title="Idle — Narrator starts the round">
+    From the Narrator's Game Director Console, the Narrator clicks **Initiate Night Phase**. The server increments the round counter and sets `RoundPhase` to `night`. All previously submitted actions and votes are cleared. Players on the client see the round transition immediately via the 2-second polling loop.
+  </Step>
+  <Step title="Night phase — Special roles submit actions">
+    Each role with a night action selects a target from the list of alive players and submits it:
+
+    - **Mafia** — Members open the private Mafia Chat modal (automatically displayed during the night phase). Each Mafia player submits a `mafia_kill` action pointing to their chosen target. The server will later resolve the most-voted target.
+    - **Doctor** — Submits a `doctor_heal` action. Can target themselves.
+    - **Detective** — Submits a `detective_check` action. Will learn the result after resolution.
+    - **Silencer** — Submits a `lady_silence` action. The targeted player's night action will be blocked.
+
+    **Villagers** and players whose role carries no night action see a "The Town Sleeps" waiting screen. Players can update their action submission up until the Narrator resolves the night — only the most recent submission per actor is used.
+
+    The Narrator sees live intel on all submitted targets in the "Tonight's Live Intel" panel, updating in real time.
+  </Step>
+  <Step title="Narrator resolves the night">
+    The Narrator clicks **Resolve Night Actions & Wake Town**. The server applies all submitted night actions in a strict order (see [Resolution Order](#night-action-resolution-order) below), computes the results, checks for a winner, and transitions the phase to `voting` (or `idle` if no alive players remain for voting).
+
+    After resolution, each player's client reflects the outcome. Eliminated players are moved to the Graveyard.
+  </Step>
+  <Step title="Voting phase — Town votes to eliminate a suspect">
+    Every alive, non-Narrator player sees the **Cast Your Accusation** ballot card. Each player selects one alive player from a dropdown and submits their vote. Players can change their vote before the final tally — the latest submission per voter is used.
+
+    A live progress meter shows how many votes have been cast. Once every alive player has voted, the server automatically tallies the results:
+
+    - The player with the **most votes and a clear lead** (unique highest vote count) is eliminated.
+    - If two or more players share the top vote count, it is a **tie** — no player is eliminated that round.
+
+    After tallying, a vote summary modal is shown to all players with the full breakdown.
+  </Step>
+  <Step title="Win condition is checked">
+    After each elimination (night kill or day vote), the server checks:
+
+    ```
+    mafiaAlive === 0   →  city wins
+    mafiaAlive >= cityAlive  →  mafia wins
+    otherwise  →  no winner yet, next round
+    ```
+
+    `cityAlive` is all alive non-Narrator, non-Mafia players. If a winner is found, a `gameResult` is saved with the winning team, a message, and the round number. The game moves to a finished state and a Game Over modal is shown to all players. If there is no winner, the round phase resets to `idle` and the Narrator can begin the next round.
+  </Step>
+</Steps>
+
+## Night Action Resolution Order
+
+The server resolves night actions in the following strict order — **the Silencer always acts first**:
+
+```
+1. lady_silence   (Silencer)   — Block the targeted player's action
+2. doctor_heal    (Doctor)     — Protect the targeted player
+3. detective_check (Detective) — Check the targeted player's alignment
+4. mafia_kill     (Mafia)      — Eliminate the targeted player
+```
+
+**Step-by-step logic:**
+
+1. **Silencer resolves** — The Silencer's latest `lady_silence` action is applied. The targeted player's `actorId` is recorded as `mutedPlayerId`.
+2. **Doctor resolves** — The Doctor's latest `doctor_heal` action is applied, *unless* the Doctor was silenced (`actorId === mutedPlayerId`). The protected target is recorded.
+3. **Detective resolves** — The Detective's latest `detective_check` action is applied, *unless* the Detective was silenced. The target's role is inspected. **If the target is the Silencer (`Role.LADY`), the result is always `false` (not Mafia)**, regardless of any other condition.
+4. **Mafia resolves** — All valid `mafia_kill` actions are tallied by target. The target with the most votes wins; ties are broken by the most-recent submission timestamp. Any Mafia member who was silenced has their action discarded before this step. If the Mafia's final target matches the Doctor's protected target, the kill is prevented (`doctorSaved = true`) and `killedPlayerId` is `null`. Otherwise, the target is eliminated.
+
+After all actions resolve, the server appends round events to the log and the Narrator sees a complete summary.
+
+## Voting Logic
+
+Each alive, non-Narrator player casts exactly one vote per round. The mechanics:
+
+- A player can update their vote before everyone has voted — only their most recent submission counts.
+- Once the last pending voter submits, the server tallies automatically.
+- Vote counts are computed per target across all submitted votes.
+- The target with the **strictly highest vote count** and **no other player matching that count** is eliminated.
+- Any tie at the top (even 1-1 with only two voters) results in **no elimination**.
+- The eliminated player (if any) is added to `eliminatedPlayerIds`.
+
+## Eliminated Players and the Graveyard
+
+When a player is eliminated — either by a night kill or a day vote — their player ID is added to `eliminatedPlayerIds`. From that point:
+
+- They **cannot submit night actions or votes**.
+- Their player entry is shown with a strikethrough in the Narrator's dossier.
+- They are directed to the **Graveyard screen** — a dedicated chat channel for eliminated players to observe and communicate with each other without influencing the living players.
+- Graveyard messages are visible only to eliminated players and the Narrator.
+
+## Resetting the Game
+
+The host can click **Assign New Roles** at any time after the game has started. This calls `/api/rooms/reset`, which re-randomizes all role assignments across the current player list without removing anyone from the room. Round state is cleared, all eliminations are reset, and every player returns to the Role Reveal screen to confirm their new role. This allows the same group to play multiple games in a row without anyone needing to leave and rejoin.
+
+<Note>
+  In **Casual (Role-Only) Mode**, the server blocks calls to `/api/rooms/round/resolve` and `/api/rooms/round/vote` with a `409` error. Night resolution and vote tallying must be handled entirely in person. The app's role for the session is limited to distributing secret roles.
+</Note>

@@ -1,0 +1,116 @@
+---
+title: "POST /api/rooms/round/resolve — Resolve the Night Round"
+sidebarTitle: "POST /round/resolve"
+description: "Narrator-only endpoint that processes all submitted night actions in priority order, eliminates killed players, checks win conditions, and opens voting if the game continues."
+---
+
+Once the narrator decides all players have had enough time to submit their night actions, this endpoint processes them in a fixed priority order and transitions the game to the next phase. Actions are evaluated as: **Silencer first** (blocks a target's action), then **Doctor** (may negate a Mafia kill), then **Detective** (checks if a target is Mafia), and finally **Mafia kill** (eliminates the target unless saved by the Doctor). After applying outcomes, the server checks whether a win condition has been met; if not, it opens the `'voting'` phase. All resolution events are appended to the public round event log, which clients can display to players.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code of the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the caller. Must belong to the narrator; any non-narrator player receives a `403`.
+</ParamField>
+
+## Resolution order
+
+The server processes submitted actions in the following priority sequence:
+
+<Steps>
+  <Step title="Silencer (lady_silence)">
+    The most recent valid `lady_silence` action is resolved first. The targeted player's action is **muted** — their action is excluded from all subsequent resolution steps for this round, even if they submitted one.
+  </Step>
+  <Step title="Doctor (doctor_heal)">
+    The most recent valid `doctor_heal` action (from a non-muted Doctor) is resolved. If the Doctor's target matches the Mafia's kill target, the kill is **prevented** and `doctorSaved` is set to `true`.
+  </Step>
+  <Step title="Detective (detective_check)">
+    The most recent valid `detective_check` action (from a non-muted Detective) is resolved. The server checks whether the target's role is `Mafia`. If the target is the Silencer (`Role.LADY`), the result is **always `false`** (not Mafia), regardless of their actual role.
+  </Step>
+  <Step title="Mafia kill (mafia_kill)">
+    The kill target is selected by majority vote among Mafia members' `mafia_kill` actions (ties broken by most-recent submission). If the target was not saved by the Doctor, they are added to `eliminatedPlayerIds`.
+  </Step>
+</Steps>
+
+## Win condition
+
+After all actions are applied, the server evaluates survivor counts:
+
+- **City wins** — `mafiaAlive === 0`
+- **Mafia wins** — `mafiaAlive >= cityAlive`
+- **Game continues** — neither condition met → phase transitions to `'voting'`
+
+If a winner is found, `gameResult` is set on the round state and the phase returns to `'idle'` (no voting round is opened).
+
+## Round event log entries
+
+The following event types may be appended to `roundState.events` during resolution:
+
+| Event type | When appended |
+|------------|---------------|
+| `lady_silence` | A valid Silencer action existed. |
+| `detective_check` | A valid Detective action existed. |
+| `doctor_heal` | A valid Doctor action existed. |
+| `mafia_kill` | Always — describes whether a player was eliminated or no valid target was submitted. |
+| `vote_elimination` | No alive players remain after the night; the round ends automatically without voting. |
+| `note` | A winner was determined — game-over message is logged. |
+
+## Response
+
+<ResponseField name="data" type="object">
+  Returned on a successful `200` response.
+
+  <Expandable title="data fields">
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the night was resolved successfully.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `error` message | Condition |
+|--------|-----------------|-----------|
+| `400` | `Missing roomCode or clientId` | Either field is absent or empty. |
+| `403` | `Player not found` | No player row matches `clientId` in this room. |
+| `403` | `Only the narrator can resolve the night.` | The caller is not the narrator. |
+| `404` | `Room not found` | No room exists for the given `roomCode`. |
+| `405` | `Method not allowed` | Request method is not `POST`. |
+| `409` | `Role-only mode does not use in-app night resolution.` | `casualMode` is enabled for this room. |
+| `409` | `The game is already over.` | A `gameResult` is already set on the round state. |
+| `409` | `There is no active night round.` | Current phase is not `'night'`. |
+| `500` | `Failed to load players` | Supabase read for players failed unexpectedly. |
+| `500` | `Failed to resolve round` | Supabase write failed when persisting the new round state. |
+
+<Info>
+  After a successful resolution, `roundState.actions`, `roundState.votes`, and `roundState.mafiaMessages` are all cleared. The outcome details are preserved in `roundState.lastResult` for clients to display the night summary.
+</Info>
+
+<Note>
+  The Silencer's muting effect applies only within the current round's resolution. Even a muted player's `lady_silence` action is still processed — only their other action types (kill, heal, check) are suppressed.
+</Note>
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/round/resolve', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'narrator-client-uuid'
+  })
+});
+
+const { data, error } = await response.json();
+
+if (error) {
+  console.error('Resolution failed:', error);
+} else {
+  console.log('Night resolved:', data.ok); // true
+  // Poll roundState to read lastResult and the new phase
+}
+```

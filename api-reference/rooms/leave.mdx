@@ -1,0 +1,64 @@
+---
+title: "POST /api/rooms/leave — Remove a Player from a Room"
+sidebarTitle: "POST /rooms/leave"
+description: "Removes the calling player from a room. If the departing player was the host, promotes the next earliest-joined player. Deletes the room if no players remain."
+---
+
+The `/api/rooms/leave` endpoint gracefully removes a player from a room. It handles three important scenarios automatically: if the departing player was the **host**, the longest-tenured remaining player (sorted by `created_at` ascending) is promoted to host so the room is never left without leadership; if the room becomes **empty** after the player leaves, the room itself is deleted from the database; if the player's `clientId` is not found in the room, the call is treated as a no-op and returns success, making it safe to call on page unload regardless of prior state.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code of the room to leave.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID of the player who is leaving.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` on a successful leave (including the case where the player was not found in the room).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
+| `404` | `Room not found` | No room matches the provided `roomCode`. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `500` | `Failed to load player` | Supabase error while looking up the player record. |
+| `500` | `Failed to remove player` | Supabase error while deleting the player row. |
+| `500` | `Failed to load remaining players` | Supabase error while querying remaining players after deletion. |
+| `500` | `Failed to remove room` | Supabase error while deleting the now-empty room. |
+| `500` | `Failed to promote new host` | Supabase error while updating the next host's flag. |
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/leave', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+  })
+});
+const { data } = await response.json();
+// data.ok === true
+console.log(data.ok);
+```
+
+<Note>
+  This endpoint is safe to call on browser `beforeunload` or `visibilitychange` events. If the player was never in the room (e.g. a duplicate leave call), the server returns `{ data: { ok: true } }` without error.
+</Note>
+
+<Info>
+  **Host promotion** — when the leaving player held the host flag and at least one other player remains, the server checks whether any remaining player already has `is_host = true`. If none do, the player with the earliest `created_at` timestamp in the room is promoted to host. This ensures uninterrupted control of room settings and the ability to start the game.
+</Info>

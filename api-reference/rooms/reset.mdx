@@ -1,0 +1,75 @@
+---
+title: "POST /api/rooms/reset — Reset the Game to Lobby State"
+sidebarTitle: "POST /rooms/reset"
+description: "Resets a started room back to the waiting lobby. Clears all player roles, confirmed flags, narrator flags, and round state. Only the host may call this endpoint."
+---
+
+The `/api/rooms/reset` endpoint returns a room to the `waiting` state after a game has concluded or when the host wants to start fresh with new role assignments. It strips every player's `role`, `has_confirmed`, and `is_narrator` flags back to their defaults, and clears `roundState` from the room's settings. The room's existing player list, host assignment, and base settings (mafia count, custom roles, etc.) are all preserved — only the game-session-specific state is wiped. This allows the same group to play multiple rounds without everyone having to re-join.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code of the room to reset.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID of the requesting player. Must belong to the room's current host.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the reset completed successfully.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## What Gets Reset
+
+| Field | Before reset | After reset |
+|-------|-------------|-------------|
+| Room `status` | `started` or `finished` | `waiting` |
+| Room `roundState` | RoundState object | `null` |
+| Player `role` | Assigned role string | `null` |
+| Player `has_confirmed` | `true` / `false` | `false` |
+| Player `is_narrator` | `true` / `false` | `false` |
+
+Settings (`mafiaCount`, `doctor`, `detective`, `lady`, `casualMode`, `customRoles`) and the player roster are **not** affected.
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
+| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
+| `403` | `Only host can reset the game` | The calling player exists but does not hold the host flag. |
+| `404` | `Room not found` | No room matches the provided `roomCode`. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `500` | `Failed to reset players` | Supabase error while clearing player role data. |
+| `500` | `Failed to reset room` | Supabase error while updating the room status and settings. |
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/reset', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+  })
+});
+const { data } = await response.json();
+// data.ok === true — room is back in 'waiting' state
+console.log(data.ok);
+```
+
+<Tip>
+  After a successful reset, every player's polling loop will observe `status: "waiting"` and `role: undefined` in the next `/api/rooms/state` response. The frontend should navigate players back to the lobby screen when it detects this transition.
+</Tip>
+
+<Note>
+  Only the host can reset the room. If the host has left the room, the next player in the join order is automatically promoted to host via the `/api/rooms/leave` logic.
+</Note>

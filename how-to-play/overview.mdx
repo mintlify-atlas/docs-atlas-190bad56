@@ -1,0 +1,62 @@
+---
+title: "How to Play Mafia Night Game"
+sidebarTitle: "Overview"
+description: "Learn the basics of Mafia Night Game — a real-time social deduction game where a hidden Mafia faction secretly battles an unsuspecting town."
+---
+
+Mafia Night Game is a browser-based social deduction game where a hidden **Mafia** faction tries to eliminate the town before being discovered, while the **Townspeople** work together to vote out every Mafia member. The game runs entirely in the browser with no installation required — just share a 6-digit room code and play in real time.
+
+## The Two Teams
+
+Every game pits two sides against each other:
+
+- **Mafia** — A small group who know each other's identities from the start. Each night they secretly coordinate to eliminate one town member. Their goal is to equal or outnumber the remaining town.
+- **Town** — Everyone else. This includes the base **Villager** role and optional special roles (Doctor, Detective, Silencer). Townspeople must identify and vote out all Mafia members before it's too late.
+
+## The Narrator
+
+One player is randomly selected at game start to serve as **Narrator**. The Narrator is not on either team — they see every player's role, guide each round transition, trigger the night phase, and resolve night actions. The Narrator never votes and cannot be eliminated.
+
+## How a Game Plays Out
+
+<Steps>
+  <Step title="Create a room">
+    The host opens the app and selects **Create**. A unique 6-digit room code is generated automatically. Share this code with everyone who wants to play.
+  </Step>
+  <Step title="Players join and host configures settings">
+    Players enter the room code and their name on the **Join** screen. Once everyone is in the lobby, the host configures the game: how many Mafia members to include, whether to enable the Silencer role, whether to add custom roles, and whether to enable Casual (Role-Only) mode.
+  </Step>
+  <Step title="Host starts the game — roles are assigned">
+    The host clicks **Assign Secret Roles & Begin**. The server randomly shuffles roles across all players. One player is randomly selected as Narrator and sees every role; all other players are assigned a secret role.
+  </Step>
+  <Step title="Each player confirms their role">
+    Every non-Narrator player is shown their secret role on the Role Reveal screen. Players must tap to reveal their role and then confirm it before the game begins. The Narrator waits for all players to confirm.
+  </Step>
+  <Step title="Night phase — special roles act">
+    The Narrator initiates the night. Each role with a night action (Mafia, Doctor, Detective, Silencer) privately selects a target in the app. Mafia members can also communicate via a private Mafia chat. Villagers and other roles with no night action see a waiting screen.
+  </Step>
+  <Step title="Narrator resolves the night">
+    The Narrator clicks **Resolve Night Actions & Wake Town**. The server processes all submitted actions in order, calculates the result, and transitions the game to the voting phase.
+  </Step>
+  <Step title="Day / voting phase — town votes">
+    All alive, non-Narrator players each cast one vote to eliminate a suspected Mafia member. Once every living player has voted, the server tallies the ballots. The player with the most votes (and a clear lead — no ties) is eliminated.
+  </Step>
+  <Step title="Win condition is checked">
+    After the vote resolves, the server checks for a winner: if all Mafia members have been eliminated, **Town wins**; if the number of surviving Mafia equals or exceeds the number of surviving town members, **Mafia wins**. Otherwise, the next round begins.
+  </Step>
+  <Step title="Repeat until a winner is decided">
+    The Narrator starts the next round and the cycle continues — night, resolve, vote — until one team satisfies its win condition.
+  </Step>
+</Steps>
+
+## Casual (Role-Only) Mode
+
+When the host enables **Role-Only Mode**, the app assigns secret roles to every player but does not run night actions, voting, or win checking in the browser. Players continue the rest of the game in person — discussing, accusing, and voting at the table — while the app simply handles secret role distribution. This is ideal for groups that prefer the physical social experience but still want fair, randomized role assignments.
+
+<Note>
+  **Session persistence** — closing and reopening your browser does not remove you from the game. The app stores your session locally and automatically reconnects you to your room the next time you visit. You will rejoin exactly where you left off without needing to re-enter the room code.
+</Note>
+
+## Player Limits
+
+A minimum of **2 players** is required to start a room (the server enforces this check). Rooms support up to **20 players** in total.

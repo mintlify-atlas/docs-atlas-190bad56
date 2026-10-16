@@ -1,0 +1,85 @@
+---
+title: "POST /api/rooms/start — Start the Game and Assign Roles"
+sidebarTitle: "POST /rooms/start"
+description: "Host starts the game: randomly selects a Narrator, shuffles and assigns roles to all other players per room settings, and transitions room status to started."
+---
+
+The `/api/rooms/start` endpoint kicks off a game session. It may only be called by the room host while the room is in `waiting` status and at least 2 players are present. The server picks one player at random to become the **Narrator** (who oversees the game but does not receive a gameplay role). All remaining players — the *participants* — receive shuffled roles according to the room's settings: `mafiaCount` Mafia roles are assigned first, then Doctor and Detective (always included), then Silencer if `lady` is enabled, then any custom roles in definition order, and finally enough Villager roles to fill the remaining slots. The room status is then set to `started` and `roundState` is cleared.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The 6-digit numeric room code of the room to start.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The browser-generated UUID of the requesting player. Must belong to the room's current host.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the game has been started successfully.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Role Assignment Logic
+
+<Info>
+  Understanding how roles are assigned can help hosts configure `mafiaCount` and custom roles correctly for their player count.
+</Info>
+
+1. **Narrator selection** — one player is chosen uniformly at random from the full player list and marked `is_narrator = true` with the `Narrator` role. They are excluded from all gameplay role assignment.
+2. **Role pool construction** — the remaining players (participants) receive roles in this priority order:
+   - `mafiaCount` × `Mafia` (clamped: minimum `1`, maximum `participants.length - 1`)
+   - `Doctor` (always included)
+   - `Detective` (always included)
+   - `Silencer` if `lady` is `true`
+   - Custom roles in the order defined, each repeated `count` times
+   - `Villager` fills all remaining slots
+3. **Shuffling** — the role pool is shuffled using a Fisher-Yates algorithm before being assigned positionally to participants.
+4. **Room update** — the room's `status` is set to `"started"` and `roundState` is reset to `null`.
+
+<Note>
+  If the room has fewer participants than the total number of special roles, roles are assigned greedily in priority order until all participant slots are filled. Villager slots are only added after all special roles are exhausted or participant slots are used up.
+</Note>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `400` | `Missing roomCode or clientId` | One or more required body fields are absent or empty. |
+| `400` | `At least 2 players are required.` | The room has fewer than 2 players (covers both the pre-check and the edge case where participants list is empty after Narrator selection). |
+| `403` | `Player not found` | No player with the given `clientId` exists in this room. |
+| `403` | `Only host can start the game` | The calling player exists but does not hold the host flag. |
+| `404` | `Room not found` | No room matches the provided `roomCode`. |
+| `405` | `Method not allowed` | Request was not `POST`. |
+| `409` | `Room already started` | The room's status is no longer `waiting`. |
+| `500` | `Failed to assign roles` / `Failed to assign narrator` / `Failed to update room status` | Supabase database error during role assignment or room status update. |
+
+## Example
+
+```javascript
+const response = await fetch('/api/rooms/start', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '123456',
+    clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+  })
+});
+const { data } = await response.json();
+// data.ok === true — game has started, roles assigned
+console.log(data.ok);
+```
+
+<Warning>
+  Once the game is started, the room status becomes `started` and new players can no longer join. Any subsequent `/api/rooms/join` calls from unknown `clientId`s will receive a `409` error.
+</Warning>
+
+<Tip>
+  After a successful start, every client's polling loop via `/api/rooms/state` will observe `status: "started"` and a populated `role` field for the requesting player on the next tick (within ~2 seconds).
+</Tip>

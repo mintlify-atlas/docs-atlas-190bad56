@@ -1,0 +1,171 @@
+---
+title: "POST /api/rooms/round/action — Submit Night Action or Chat"
+sidebarTitle: "POST /round/action"
+description: "Dual-purpose endpoint: alive players submit their role-specific night action by targeting a player, or send a message to the Mafia or Graveyard chat channel."
+---
+
+This endpoint handles two distinct operations within an active game: submitting a **night action** (where an eligible role targets another player) and posting a **chat message** to either the private Mafia channel or the Graveyard channel for eliminated players. The server determines which operation to perform based on the presence of `message` in the request body. If `message` is provided, the request is treated as a chat submission; otherwise, `targetId` is required for a night action. Both paths require the room to be in an active game state and `casualMode` to be disabled.
+
+## Request — Night action
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code of the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the acting player. Must be alive (non-eliminated) and non-narrator. The player's role must have a corresponding night action.
+</ParamField>
+
+<ParamField body="targetId" type="string" required>
+  The database UUID of the player to target. Must be an alive, non-narrator player in the same room. If `message` is provided, this field is ignored.
+</ParamField>
+
+## Request — Mafia chat
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code of the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the sender. Must be an alive, non-eliminated Mafia member; the narrator cannot post here.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  The chat message text. Truncated server-side to **800 characters**.
+</ParamField>
+
+<ParamField body="chatScope" type="string" required>
+  Must be `"mafia"` (case-insensitive) to route the message to the Mafia channel. Any other value (or omitting the field) routes to Graveyard chat instead.
+</ParamField>
+
+## Request — Graveyard chat
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code of the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the sender. Must be an **eliminated** player; the narrator cannot post here.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  The chat message text. Truncated server-side to **800 characters**. Omit `chatScope` or set it to any value other than `"mafia"` to use this path.
+</ParamField>
+
+## Night action types by role
+
+| Role | `RoundActionType` |
+|------|-------------------|
+| Mafia | `mafia_kill` |
+| Doctor | `doctor_heal` |
+| Detective | `detective_check` |
+| Silencer | `lady_silence` |
+| Villager | *(no night action)* |
+
+<Note>
+  A player can update their night action before the narrator resolves the round — the server replaces any existing action from the same actor with the new one.
+</Note>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Returned on a successful `200` response for all three operation modes.
+
+  <Expandable title="data fields">
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the action or message was recorded successfully.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `error` message | Condition |
+|--------|-----------------|-----------|
+| `400` | `Missing roomCode or clientId` | Either required identity field is absent or empty. |
+| `400` | `Missing targetId` | Night action path: `targetId` is absent or empty (and no `message` is present). |
+| `403` | `Player not found` | No player row matches `clientId` in this room. |
+| `403` | `The narrator cannot access Mafia chat.` | Mafia chat: caller is the narrator. |
+| `403` | `Eliminated players cannot access Mafia chat.` | Mafia chat: caller has been eliminated. |
+| `403` | `Only Mafia members can use Mafia chat.` | Mafia chat: caller's role is not `Mafia`. |
+| `403` | `The narrator cannot post in player chat.` | Graveyard chat: caller is the narrator. |
+| `403` | `Only eliminated players can use the graveyard chat.` | Graveyard chat: caller is still alive. |
+| `403` | `The narrator does not submit night actions.` | Night action: caller is the narrator. |
+| `403` | `Eliminated players cannot submit actions.` | Night action: caller has been eliminated. |
+| `403` | `This role does not have a night action.` | Night action: caller's role (e.g., Villager) has no action type. |
+| `404` | `Room not found` | No room exists for the given `roomCode`. |
+| `404` | `Invalid action target.` | Night action: `targetId` does not correspond to a valid non-narrator player in this room. |
+| `405` | `Method not allowed` | Request method is not `POST`. |
+| `409` | `Actions are available after the game starts.` | Room `status` is not `'finished'` (game hasn't fully started). |
+| `409` | `Role-only mode does not use in-app actions or chat.` | `casualMode` is enabled for this room. |
+| `409` | `The game is over.` | A `gameResult` is already set (Mafia chat or night action path). |
+| `409` | `Mafia chat is available only at night.` | Mafia chat: current phase is not `'night'`. |
+| `409` | `There is no active night round.` | Night action: current phase is not `'night'`. |
+| `409` | `That player has already been eliminated.` | Night action: the targeted player is in `eliminatedPlayerIds`. |
+| `500` | `Failed to send mafia message` | Supabase write failed for Mafia chat. |
+| `500` | `Failed to send graveyard message` | Supabase write failed for Graveyard chat. |
+| `500` | `Failed to submit action` | Supabase write failed for night action. |
+
+<Warning>
+  Like `round/start`, this endpoint requires room `status = 'finished'` in the database. This reflects the post-role-confirmation state of the room, not a completed game.
+</Warning>
+
+<Tip>
+  Use the `sendMafiaMessage` and `sendGraveyardMessage` helpers in `services/roomApi.ts` rather than calling this endpoint directly — they handle the `chatScope` field correctly and share a unified error-throwing wrapper.
+</Tip>
+
+## Examples
+
+### Submit a night action
+
+```javascript
+// A Mafia member targets another player during the night phase
+const response = await fetch('/api/rooms/round/action', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'mafia-player-client-uuid',
+    targetId: 'target-player-db-uuid'
+  })
+});
+
+const { data, error } = await response.json();
+console.log(data.ok); // true
+```
+
+### Send a Mafia chat message
+
+```javascript
+const response = await fetch('/api/rooms/round/action', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'mafia-player-client-uuid',
+    message: 'Let\'s target the detective tonight.',
+    chatScope: 'mafia'
+  })
+});
+
+const { data, error } = await response.json();
+console.log(data.ok); // true
+```
+
+### Send a Graveyard chat message
+
+```javascript
+const response = await fetch('/api/rooms/round/action', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'eliminated-player-client-uuid',
+    message: 'I told you it was them!'
+    // no chatScope → routes to graveyard
+  })
+});
+
+const { data, error } = await response.json();
+console.log(data.ok); // true
+```

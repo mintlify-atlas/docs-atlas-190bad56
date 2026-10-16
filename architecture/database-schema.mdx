@@ -1,0 +1,160 @@
+---
+title: "Mafia Night Game: Supabase Database Schema Reference"
+sidebarTitle: "Database Schema"
+description: "Complete reference for the two Supabase PostgreSQL tables — rooms and players — including columns, indexes, triggers, and RLS configuration."
+---
+
+Mafia Night Game persists all state in two Supabase PostgreSQL tables: `rooms` and `players`. Every piece of information — room configuration, assigned roles, night actions, votes, chat messages, and game results — is stored in these tables and read back through the serverless API layer. The browser has zero direct database access.
+
+## Full Schema SQL
+
+The complete schema, including table definitions, indexes, the `set_updated_at` trigger, Row-Level Security enablement, and permission revocations, is shown below.
+
+```sql
+create extension if not exists pgcrypto;
+
+create table if not exists public.rooms (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null,
+  status text not null default 'waiting',
+  settings jsonb not null default '{"mafiaCount":1,"doctor":true,"detective":true,"lady":false,"casualMode":false,"customRoles":[]}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.players (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  client_id text not null,
+  name text not null,
+  role text,
+  has_confirmed boolean not null default false,
+  is_host boolean not null default false,
+  is_narrator boolean not null default false,
+  created_at timestamptz not null default now(),
+  last_seen timestamptz not null default now()
+);
+
+alter table public.players add column if not exists last_seen timestamptz not null default now();
+alter table public.players add column if not exists is_narrator boolean not null default false;
+
+create unique index if not exists players_room_client_unique on public.players(room_id, client_id);
+create index if not exists players_room_last_seen_idx on public.players(room_id, last_seen);
+
+create or replace function public.set_updated_at() returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists rooms_set_updated_at on public.rooms;
+create trigger rooms_set_updated_at
+before update on public.rooms
+for each row execute function public.set_updated_at();
+
+alter table public.rooms enable row level security;
+alter table public.players enable row level security;
+
+drop policy if exists rooms_read_all on public.rooms;
+drop policy if exists players_read_all on public.players;
+
+-- Browser clients must not query game state directly. Serverless API routes use
+-- the service-role key and return a player-specific, filtered projection.
+revoke all on table public.rooms from anon, authenticated;
+revoke all on table public.players from anon, authenticated;
+```
+
+## The `rooms` Table
+
+Each row represents one game room.
+
+| Column | Type | Details |
+|--------|------|---------|
+| `id` | `uuid` | Primary key, generated via `gen_random_uuid()` |
+| `code` | `text` | Unique 6-digit numeric room code used by players to join |
+| `status` | `text` | Current room lifecycle state: `'waiting'`, `'started'`, or `'finished'` |
+| `settings` | `jsonb` | Full `RoomSettings` object **plus** the live `RoundState` (see below) |
+| `created_at` | `timestamptz` | Row creation timestamp, defaults to `now()` |
+| `updated_at` | `timestamptz` | Automatically refreshed on every `UPDATE` by the `set_updated_at` trigger |
+
+### The `settings` JSONB Column
+
+The `settings` column stores two logical objects merged together:
+
+- **`RoomSettings`** — static configuration chosen in the lobby: `mafiaCount`, `doctor`, `detective`, `lady`, `casualMode`, and `customRoles`.
+- **`roundState`** — the full live `RoundState` object, written by the round API handlers and `null` when the game is in the lobby.
+
+The `RoundState` sub-object contains the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `round` | `number` | Incrementing round counter |
+| `phase` | `'idle' \| 'night' \| 'voting'` | Current round phase |
+| `actions` | `RoundAction[]` | Night actions submitted this round |
+| `votes` | `RoundVote[]` | Daytime votes cast this round |
+| `events` | `RoundEvent[]` | Narrator-visible log of all round events |
+| `eliminatedPlayerIds` | `string[]` | UUIDs of all players eliminated so far |
+| `lastResult` | `RoundResult \| null` | Outcome of the most recently resolved night |
+| `lastVoteSummary` | `RoundVoteSummary \| null` | Vote tally from the most recent voting phase |
+| `gameResult` | `RoundGameResult \| null` | Set when the game ends; includes winner and message |
+| `graveyardMessages` | `GraveyardMessage[]` | In-game chat visible to narrator + eliminated players |
+| `mafiaMessages` | `MafiaMessage[]` | Mafia team chat visible to narrator + active Mafia at night |
+
+## The `players` Table
+
+Each row represents one player in one room.
+
+| Column | Type | Details |
+|--------|------|---------|
+| `id` | `uuid` | Primary key, generated via `gen_random_uuid()` |
+| `room_id` | `uuid` | Foreign key to `rooms(id)` — cascades on delete |
+| `client_id` | `text` | Random UUID stored in the player's browser localStorage (`mafia_client_id`) |
+| `name` | `text` | Player display name, max 32 characters |
+| `role` | `text` | Assigned role string (e.g. `'Mafia'`, `'Doctor'`); `null` until game starts |
+| `has_confirmed` | `boolean` | `true` once the player has acknowledged their role on the reveal screen |
+| `is_host` | `boolean` | `true` for the player who created the room |
+| `is_narrator` | `boolean` | `true` for the designated narrator |
+| `created_at` | `timestamptz` | Row creation timestamp |
+| `last_seen` | `timestamptz` | Updated on every successful state poll — used as a heartbeat |
+
+## Indexes
+
+### `players_room_client_unique`
+
+```sql
+create unique index if not exists players_room_client_unique
+  on public.players(room_id, client_id);
+```
+
+This composite unique index enforces that each `clientId` can have at most one player record per room. Without it, a browser that reloads rapidly during the join flow could create duplicate rows. The `/api/rooms/join` handler relies on this constraint to distinguish a returning player (update `last_seen`) from a new one (insert).
+
+### `players_room_last_seen_idx`
+
+```sql
+create index if not exists players_room_last_seen_idx
+  on public.players(room_id, last_seen);
+```
+
+Supports the cleanup query that identifies and removes players (and therefore rooms) that have been inactive for too long.
+
+## The `set_updated_at` Trigger
+
+```sql
+create or replace function public.set_updated_at() returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger rooms_set_updated_at
+before update on public.rooms
+for each row execute function public.set_updated_at();
+```
+
+The trigger fires `BEFORE UPDATE` on the `rooms` table and overwrites `new.updated_at` with the current timestamp. This means `rooms.updated_at` is always accurate regardless of which column was modified, and callers never need to supply the value themselves.
+
+<Note>
+  Row-Level Security is enabled on both tables, and both the `anon` and `authenticated` Supabase roles have **all permissions explicitly revoked**. No browser client — including one that holds the public anon key — can read or write any game data directly. All access flows through the serverless API using the service-role key.
+</Note>

@@ -1,0 +1,90 @@
+---
+title: "GET /api/rooms/cleanup — Delete Stale Rooms and Players"
+sidebarTitle: "GET /rooms/cleanup"
+description: "Vercel Cron endpoint that purges players inactive for 20+ minutes and removes any rooms that are left empty as a result. Requires a Bearer token for authorization."
+---
+
+The `/api/rooms/cleanup` endpoint is a scheduled maintenance job invoked automatically by Vercel Cron at **03:00 UTC daily**. It performs a two-phase cleanup: first, it deletes all player rows whose `last_seen` timestamp is older than **20 minutes** relative to the time of the call; second, it scans every remaining room and deletes any room that has zero players left after the first phase. The response includes a count of how many rooms were removed. This endpoint must not be called by game clients — it is protected by a `Bearer` token secret set in the `CRON_SECRET` environment variable.
+
+## Authentication
+
+This endpoint requires an `Authorization` header carrying the cron secret.
+
+```
+Authorization: Bearer <CRON_SECRET>
+```
+
+If the header is missing, does not match the `Bearer` scheme, or the token does not equal the value of `process.env.CRON_SECRET`, the server returns `401 Unauthorized`.
+
+## Request
+
+<ParamField header="Authorization" type="string" required>
+  Must be `Bearer <CRON_SECRET>` where `CRON_SECRET` is the environment variable configured in the Vercel project settings.
+</ParamField>
+
+<Info>
+  This endpoint accepts both `GET` and `POST` methods. The Vercel Cron scheduler invokes it as `GET`. Attempting any other HTTP method returns `405 Method Not Allowed`.
+</Info>
+
+## Cleanup Behaviour
+
+### Phase 1 — Stale player removal
+
+All rows in the `players` table where `last_seen < (now - 20 minutes)` are deleted. Since `/api/rooms/state` updates `last_seen` on every poll (every ~2 seconds for active clients), only genuinely disconnected players are removed.
+
+### Phase 2 — Empty room removal
+
+All rooms are loaded with their player counts. Any room whose player count dropped to zero as a result of Phase 1 is deleted. This cascades to clean up rooms that were abandoned mid-game.
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields" defaultOpen>
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the cleanup job completed without errors.
+    </ResponseField>
+    <ResponseField name="removedRooms" type="number">
+      The number of empty rooms that were deleted during this run. `0` if no rooms were cleaned up.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Error message | Cause |
+|--------|---------------|-------|
+| `401` | `Unauthorized` | `Authorization` header is absent, malformed, or the token does not match `CRON_SECRET`. |
+| `405` | `Method not allowed` | Request method is not `GET` or `POST`. |
+| `500` | `Failed to delete stale players` | Supabase error during Phase 1 player deletion. |
+| `500` | `Failed to load rooms` | Supabase error while fetching rooms with player counts. |
+| `500` | `Failed to delete empty rooms` | Supabase error during Phase 2 room deletion. |
+
+## Example
+
+```bash
+# Manually trigger cleanup (e.g. for testing or ops use)
+curl -X GET https://your-deployment.vercel.app/api/rooms/cleanup \
+  -H "Authorization: Bearer your_cron_secret_here"
+```
+
+```javascript
+// Programmatic trigger (Node.js / server-side only — never call from a browser)
+const response = await fetch('/api/rooms/cleanup', {
+  method: 'GET',
+  headers: {
+    Authorization: `Bearer ${process.env.CRON_SECRET}`
+  }
+});
+const { data } = await response.json();
+// data.ok === true
+// data.removedRooms — number of rooms deleted
+console.log(`Cleaned up ${data.removedRooms} empty room(s).`);
+```
+
+<Warning>
+  Never expose the `CRON_SECRET` value to the browser or include it in client-side code. This endpoint is intended exclusively for the Vercel Cron scheduler and server-side operational tooling.
+</Warning>
+
+<Note>
+  The 20-minute stale threshold means a player who closes their browser without explicitly calling `/api/rooms/leave` will be automatically removed within at most 20 minutes. Active players who are polling `/api/rooms/state` every 2 seconds will never be considered stale.
+</Note>

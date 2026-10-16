@@ -1,0 +1,104 @@
+---
+title: "POST /api/rooms/round/vote — Submit or Update a Day Vote"
+sidebarTitle: "POST /round/vote"
+description: "Alive non-narrator players cast or update their elimination vote. Once every eligible player has voted, the server tallies results and resolves the round automatically."
+---
+
+During the `'voting'` phase, each alive non-narrator player calls this endpoint to nominate a player for elimination. Votes are recorded individually and can be changed — the server always uses the most recent submission from each voter. As soon as the number of recorded votes equals the number of eligible voters, the server automatically tallies the results: the player with a **strict majority** is eliminated, ties produce no elimination, and the win condition is evaluated. The phase then transitions back to `'idle'` regardless of outcome, and a `lastVoteSummary` is attached to the round state for clients to display.
+
+## Request
+
+<ParamField body="roomCode" type="string" required>
+  The six-character room code of the game room.
+</ParamField>
+
+<ParamField body="clientId" type="string" required>
+  The unique client UUID of the voter. Must be an alive, non-eliminated, non-narrator player.
+</ParamField>
+
+<ParamField body="targetId" type="string" required>
+  The database UUID of the player to vote for. Must be an alive (non-eliminated, non-narrator) player in the same room. Note: the server also accepts `eliminatedPlayerId` as a legacy alias for this field.
+</ParamField>
+
+## Vote resolution logic
+
+Vote resolution triggers automatically the moment `completedVoters >= totalVoters`:
+
+1. **Tally** — count votes per alive player.
+2. **Determine elimination** — the player with the single highest vote count is eliminated. If two or more players share the top count (a tie), **no one is eliminated**.
+3. **Update state** — the eliminated player's ID (if any) is appended to `eliminatedPlayerIds`.
+4. **Check win condition:**
+   - `mafiaAlive === 0` → **city wins**
+   - `mafiaAlive >= cityAlive` → **Mafia wins**
+   - Otherwise → game continues
+5. **Transition phase** — always moves to `'idle'`, regardless of whether a winner was found.
+6. **Persist** `lastVoteSummary` with full per-player vote counts, the eliminated player (if any), and voter totals.
+
+<Note>
+  A player may re-submit their vote before the final tally. Each new submission from the same `clientId` replaces the previous vote. Resolution only fires once `completedVoters >= totalVoters`, so changing a vote does not prematurely trigger resolution.
+</Note>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Returned on a successful `200` response, whether the vote was recorded mid-round or a final tally was completed.
+
+  <Expandable title="data fields">
+    <ResponseField name="ok" type="boolean">
+      Always `true` when the vote was accepted (or tally was resolved successfully).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `error` message | Condition |
+|--------|-----------------|-----------|
+| `400` | `Missing roomCode or clientId` | Either identity field is absent or empty. |
+| `400` | `Choose a player before submitting your vote.` | `targetId` (and its alias `eliminatedPlayerId`) is absent or empty. |
+| `403` | `Player not found` | No player row matches `clientId` in this room. |
+| `403` | `The narrator does not vote.` | Caller is the narrator. |
+| `403` | `Eliminated players cannot vote.` | Caller is in `eliminatedPlayerIds`. |
+| `404` | `Room not found` | No room exists for the given `roomCode`. |
+| `404` | `Invalid voting target.` | `targetId` does not correspond to an alive, non-narrator player in this room. |
+| `405` | `Method not allowed` | Request method is not `POST`. |
+| `409` | `Voting is available after the game starts.` | Room `status` is not `'finished'` (roles not yet confirmed). |
+| `409` | `Role-only mode does not use in-app voting.` | `casualMode` is enabled for this room. |
+| `409` | `The game is already over.` | A `gameResult` is set on the round state. |
+| `409` | `Voting is not active.` | Current phase is not `'voting'`. |
+| `500` | `Failed to load players` | Supabase read for players failed unexpectedly. |
+| `500` | `Failed to submit vote` | Supabase write failed when recording a partial vote. |
+| `500` | `Failed to resolve voting` | Supabase write failed when persisting the final tally result. |
+
+<Warning>
+  Voting targets must be **alive** players. Eliminated players cannot be voted for — `targetId` is validated against `alivePlayers`, which explicitly excludes anyone in `eliminatedPlayerIds`. Attempting to vote for an eliminated player returns `404 Invalid voting target.`
+</Warning>
+
+<Info>
+  After resolution, `roundState.lastVoteSummary` contains the full `voteCounts` array (sorted by votes descending), `eliminatedPlayerId`, `eliminatedPlayerName`, `totalVoters`, and `completedVoters`. Use this to render a post-vote results screen for players.
+</Info>
+
+## Example
+
+```javascript
+// A player casts their elimination vote
+const response = await fetch('/api/rooms/round/vote', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomCode: '482910',
+    clientId: 'alive-player-client-uuid',
+    targetId: 'suspected-player-db-uuid'
+  })
+});
+
+const { data, error } = await response.json();
+
+if (error) {
+  console.error('Vote failed:', error);
+} else {
+  console.log('Vote recorded:', data.ok); // true
+  // If this was the final vote, poll roundState to read lastVoteSummary
+  // and check if gameResult is now set
+}
+```

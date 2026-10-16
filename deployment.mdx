@@ -1,0 +1,109 @@
+---
+title: "Deploy Mafia Night Game to a Production Vercel Project"
+sidebarTitle: "Deployment"
+description: "Ship Mafia Night Game to a production Vercel project with three environment variables, a daily cron job, and hardened security headers already configured."
+---
+
+This page covers everything you need to take Mafia Night Game from a local clone to a production URL. Deployment targets Vercel because the game's API layer is built on Vercel serverless functions and the `vercel.json` configuration ships with cron, security headers, and routing already defined. You will need a Vercel account and a Supabase project; both free tiers are sufficient to host a private game night.
+
+<Steps>
+  <Step title="Import the repository into Vercel">
+    Open the [Vercel dashboard](https://vercel.com/new) and click **Add New Project → Import Git Repository**. Select the `mafia` repository (or your fork). Vercel will detect the Vite framework automatically.
+
+    Alternatively, use the Vercel CLI from the project root:
+
+    ```bash
+    npx vercel
+    ```
+
+    Follow the interactive prompts to link or create a Vercel project. Do **not** deploy yet — add environment variables first.
+  </Step>
+
+  <Step title="Add the three environment variables">
+    In the Vercel dashboard, go to your project's **Settings → Environment Variables** and add the following three variables for the **Production** (and optionally Preview) environments:
+
+    | Variable | Description |
+    |---|---|
+    | `SUPABASE_URL` | The project URL from **Supabase → Project Settings → API**. Example: `https://abcdefgh.supabase.co` |
+    | `SUPABASE_SERVICE_ROLE_KEY` | The **service\_role** secret from the same Supabase API settings page. This key bypasses Row-Level Security and must never be exposed to the browser. |
+    | `CRON_SECRET` | A random string of **at least 16 characters** used to authenticate the daily cleanup cron request. Generate one with `openssl rand -hex 16` or any password manager. |
+
+    <Warning>
+      If any of these credentials was previously committed to version control or logged in a public place, rotate it at the provider before deploying. For `SUPABASE_SERVICE_ROLE_KEY`, generate a new key in the Supabase dashboard. For `CRON_SECRET`, simply replace it with a new random value in both Vercel and your local `.env.local`.
+    </Warning>
+  </Step>
+
+  <Step title="Deploy">
+    Trigger a deployment from the Vercel dashboard by clicking **Deploy**, or push a commit to your main branch if you enabled automatic deployments during import. Vercel runs `vite build` (the `build` script in `package.json`), bundles the frontend, and deploys the `api/` directory as serverless functions.
+
+    Once the deployment completes, open the generated `.vercel.app` URL and verify you can create a room. Check the **Functions** tab in the Vercel dashboard to confirm the API routes are listed.
+  </Step>
+</Steps>
+
+## Vercel Cron: daily room cleanup
+
+The `vercel.json` configuration registers a single cron job that calls `/api/rooms/cleanup` every day at **03:00 UTC**:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/rooms/cleanup",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
+```
+
+Vercel sends a `GET` request to that path with an `Authorization: Bearer <CRON_SECRET>` header. The endpoint validates the token before deleting stale rooms. If `CRON_SECRET` is not set or does not match, the cleanup request is rejected with a `401` response and no data is deleted.
+
+<Info>
+  Vercel Cron is available on the Hobby plan with a minimum interval of once per day, which matches the `0 3 * * *` schedule used here. No additional configuration is required beyond the `vercel.json` entry and the environment variable.
+</Info>
+
+## Security headers
+
+`vercel.json` applies a set of HTTP response headers to every route (`/(.*)`). These headers are deployed automatically — no code changes are required:
+
+```json
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    }
+  ]
+}
+```
+
+What each header does:
+
+- **Content-Security-Policy** — restricts script, style, font, image, and connection sources to known origins. `frame-ancestors 'none'` prevents the app from being embedded in an iframe on another site.
+- **Permissions-Policy** — opts out of camera, microphone, and geolocation browser APIs, which the game does not use.
+- **Referrer-Policy** — sends the full URL only for same-origin requests; cross-origin requests receive only the origin.
+- **X-Content-Type-Options: nosniff** — prevents browsers from MIME-sniffing responses away from the declared `Content-Type`.
+- **X-Frame-Options: DENY** — redundant fallback to the CSP `frame-ancestors 'none'` directive for older browsers.
+
+## Post-deployment quality checks
+
+After every deployment, run the following locally against the same codebase to catch regressions before they reach users:
+
+```bash
+npm run typecheck && npm run build
+```
+
+- `npm run typecheck` — runs `tsc --noEmit` to surface TypeScript errors without producing output files.
+- `npm run build` — runs `vite build` to confirm the production bundle compiles and all imports resolve correctly.
+
+<Tip>
+  Add these two commands as a CI step in your GitHub Actions workflow (or equivalent) so that pull requests are blocked if either check fails. Vercel's own build will also fail on a broken `vite build`, but catching it in CI before the deploy saves time.
+</Tip>
